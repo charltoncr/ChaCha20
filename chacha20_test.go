@@ -1,4 +1,4 @@
-// chacha20_test.go - test chacha20 implementation.
+// chacha20_test.go - test ChaCha20 implementation.
 // By Ron Charlton, public domain, 2022-08-28.
 
 package chacha20
@@ -13,7 +13,7 @@ import (
 
 func TestChaCha20(t *testing.T) {
 	// First do a simple encrypt/decrypt and verify they are complementary.
-	key := make([]byte, 256)
+	key := make([]byte, 32)
 	crand.Read(key)
 	iv := make([]byte, 8)
 	crand.Read(iv)
@@ -89,7 +89,7 @@ func init() {
 		log.Fatalf("error from crypto/rand.Read: %v", err)
 	}
 	c = make([]byte, len(m))
-	key = make([]byte, 256)
+	key = make([]byte, 32)
 	crand.Read(key)
 	iv = make([]byte, 8)
 	crand.Read(iv)

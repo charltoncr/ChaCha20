@@ -53,7 +53,7 @@ It also sets the context's counter to 0. IvSetup panics if len(iv) is not 8.
 func (x *ChaCha20_ctx) KeySetup(k []byte)
 ```
 KeySetup sets up ChaCha20 context x with key k. KeySetup panics if len(k) is
-not 128 or 256. A key length of 256 is recommended.
+not 16 or 32. A key length of 32 is recommended.
 
 ## func 
 ```go

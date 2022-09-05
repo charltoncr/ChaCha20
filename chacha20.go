@@ -23,7 +23,7 @@
 // Type byte must be an alias for uint8.
 //
 // Example use (encrypt a file to another file):
-//		// 256-byte key and 8-byte iv assumed.
+//		// 32-byte key and 8-byte iv assumed.
 //		// (error checks omitted)
 //		b, err := os.ReadFile("myfile")
 //		ctx := chacha20.NewWithKeyIv(key, iv)
@@ -38,7 +38,7 @@
 //	   12		 507
 //	   20		 364
 //
-// $Id: chacha20.go,v 2.17 2022-09-04 12:40:11-04 ron Exp $
+// $Id: chacha20.go,v 2.18 2022-09-05 16:34:46-04 ron Exp $
 ////
 
 package chacha20
@@ -183,14 +183,14 @@ var sigma = []byte("expand 32-byte k")
 var tau = []byte("expand 16-byte k")
 
 // KeySetup sets up ChaCha20 context x with key k.  KeySetup panics if len(k)
-// is not 128 or 256. A key length of 256 is recommended.
+// is not 16 or 32. A key length of 32 is recommended.
 func (x *ChaCha20_ctx) KeySetup(k []byte) {
 	var constants []byte
-	kbits := len(k)
+	kbytes := len(k)
 
-	if kbits != 128 && kbits != 256 {
-		log.Panicf("ChaCha20.KeySetup: invalid key length; must be 128 "+
-			"or 256 bytes (is %d).", kbits)
+	if kbytes != 16 && kbytes != 32 {
+		log.Panicf("ChaCha20.KeySetup: invalid key length; must be 16 "+
+			"or 32 bytes (is %d).", kbytes)
 	}
 
 	x.input[4] = binary.LittleEndian.Uint32(k[0:])
@@ -198,7 +198,7 @@ func (x *ChaCha20_ctx) KeySetup(k []byte) {
 	x.input[6] = binary.LittleEndian.Uint32(k[8:])
 	x.input[7] = binary.LittleEndian.Uint32(k[12:])
 
-	if kbits == 256 {
+	if kbytes == 32 {
 		k = k[16:]
 		constants = sigma
 	} else {
