@@ -12,18 +12,10 @@ type ChaCha20_ctx struct {
 ```
 ## func New
 ```go
-func New() *ChaCha20_ctx
+func New(key, iv []byte) (ctx *ChaCha20_ctx)
 ```
-New allocates a new ChaCha20 context. The caller must use KeySetup and
-IvSetup to set up the new context. The default number of rounds is 20.
-
-## func NewWithKeyIv
-```go
-func NewWithKeyIv(key, iv []byte) (ctx *ChaCha20_ctx)
-```
-NewWithKeyIv allocates a new ChaCha20 context and for convenience sets up
-the new context with the caller's key and iv. The default number of rounds
-is 20.
+New allocates a new ChaCha20 context and sets it up with the caller's key
+and iv. The default number of rounds is 20.
 
 ## func 
 ```go

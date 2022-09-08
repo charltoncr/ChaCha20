@@ -1,5 +1,5 @@
 <!-- title: ChaCha20 Read Me -->
-<!-- $Id: ReadMe.md,v 1.18 2022-09-04 12:40:11-04 ron Exp $ -->
+<!-- $Id: ReadMe.md,v 1.19 2022-09-07 15:21:42-04 ron Exp $ -->
 
 # ChaCha20 public domain encryption and decryption in Go
 
@@ -29,10 +29,10 @@ key := make([]byte, 256)    // 128 is acceptable; 256 is recommended
 rand.Read(key)          // use your real key here
 iv := make([]byte, 8)   // must be 8  
 rand.Read(iv)           // use your real initialization vector here
-ctx := chacha20.NewWithKeyIv(key, iv) // create a chacha20 context
+ctx := chacha20.New(key, iv) // create a chacha20 context
 ctx.Encrypt(m, c)       // encrypt m into c
 // ...
-ctx = chacha20.NewWithKeyIv(key, iv)   // must use same key/iv as before
+ctx = chacha20.New(key, iv)   // must use same key/iv as before
 ctx.Decrypt(c, m)       // decrypt c back into m
 // ...
 ```

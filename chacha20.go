@@ -2,7 +2,7 @@
 // I, Ron Charlton, used clang -E to preprocess chacha-ref.c from
 // <https://cr.yp.to/chacha.html> to produce a prototype chacha20.go file,
 // then hand-edited it to make true Go source code. I added
-// New, NewWithKeyIv and SetRounds, and made the default rounds 20.
+// New and SetRounds, and made the default rounds 20.
 //
 // Public domain is per <https://creativecommons.org/publicdomain/zero/1.0/>
 //
@@ -26,7 +26,7 @@
 //		// 32-byte key and 8-byte iv assumed.
 //		// (error checks omitted)
 //		b, err := os.ReadFile("myfile")
-//		ctx := chacha20.NewWithKeyIv(key, iv)
+//		ctx := chacha20.New(key, iv)
 //		ctx.Encrypt(b, b)
 //		err = os.WriteFile("myfile.encrypted", b, 0644)
 //
@@ -38,7 +38,7 @@
 //	   12		 507
 //	   20		 364
 //
-// $Id: chacha20.go,v 2.18 2022-09-05 16:34:46-04 ron Exp $
+// $Id: chacha20.go,v 2.27 2022-09-08 08:45:35-04 ron Exp $
 ////
 
 package chacha20
@@ -52,7 +52,7 @@ import (
 // Higher numbers consume more compute time.  ChaCha20 requires 20.
 const defaultRounds = 20
 
-func salsa20_wordtobyte(input []uint32, rounds int) (output [64]byte) {
+func salsa20_wordtobyte(input []uint32, rounds int, output []byte) {
 	var x [16]uint32
 	var i int
 
@@ -138,30 +138,33 @@ func salsa20_wordtobyte(input []uint32, rounds int) (output [64]byte) {
 		x[i] += input[i]
 		binary.LittleEndian.PutUint32(output[4*i:], x[i])
 	}
-
-	return
 }
 
 // ChaCha20_ctx contains state information for a ChaCha20 context.
 type ChaCha20_ctx struct {
 	input  []uint32
+	output []byte
+	next   int
+	eof    bool
 	rounds int
 }
 
-// New allocates a new ChaCha20 context.  The caller must use KeySetup
-// and IvSetup to set up the new context.  The default number of rounds
-// is 20.
-func New() *ChaCha20_ctx {
+// ChaCha block size in bytes
+const outputLen = 64
+
+// new allocates a new ChaCha20 context
+func new() *ChaCha20_ctx {
 	return &ChaCha20_ctx{
 		input:  make([]uint32, 16),
+		output: make([]byte, outputLen),
+		next:   outputLen,
 		rounds: defaultRounds}
 }
 
-// NewWithKeyIv allocates a new ChaCha20 context and for convenience sets
-// up the new context with the caller's key and iv.  The default number
-// of rounds is 20.
-func NewWithKeyIv(key, iv []byte) (ctx *ChaCha20_ctx) {
-	ctx = New()
+// New allocates a new ChaCha20 context and sets it up
+// with the caller's key and iv.  The default number of rounds is 20.
+func New(key, iv []byte) (ctx *ChaCha20_ctx) {
+	ctx = new()
 	ctx.KeySetup(key)
 	ctx.IvSetup(iv)
 	return
@@ -213,6 +216,7 @@ func (x *ChaCha20_ctx) KeySetup(k []byte) {
 	x.input[1] = binary.LittleEndian.Uint32(constants[4:])
 	x.input[2] = binary.LittleEndian.Uint32(constants[8:])
 	x.input[3] = binary.LittleEndian.Uint32(constants[12:])
+	x.next = outputLen
 }
 
 // IvSetup sets initialization vector iv as a nonce for ChaCha20 context x.
@@ -226,43 +230,46 @@ func (x *ChaCha20_ctx) IvSetup(iv []byte) {
 	x.input[13] = 0
 	x.input[14] = binary.LittleEndian.Uint32(iv[0:])
 	x.input[15] = binary.LittleEndian.Uint32(iv[4:])
+	x.next = outputLen
 }
 
 // Encrypt puts ciphertext into c given plaintext m.  Any length is allowed
-// for m.  The same memory may be used for m and c.  Encrypt panics if
-// c is not at least as long as m.
+// for m.  The same memory may be used for m and c.  Encrypt panics if c is
+// not at least as long as m.
 func (x *ChaCha20_ctx) Encrypt(m, c []byte) {
 	var i int
-	bytes := len(m)
 
+	bytes := len(m)
 	if bytes == 0 {
 		return
 	}
 	if len(c) < bytes {
 		log.Panic("ChaCha20.Encrypt: insufficient space; c is shorter than m is.")
 	}
-	for {
-		output := salsa20_wordtobyte(x.input, x.rounds)
-
-		x.input[12] += 1
-		if x.input[12] == 0 {
-			x.input[13] += 1
-			/* stopping at 2^70 bytes per nonce is user's responsibility */
-			/* RonC: Generating 2^70 bytes would require 5.9e+12 years. */
-		}
-		if bytes <= 64 {
-			for i = 0; i < bytes; i++ {
-				c[i] = m[i] ^ output[i]
+	p := x.next
+	for i = 0; i < bytes; i++ {
+		if p >= outputLen {
+			if x.eof {
+				log.Panic("ChaCha20: keystream is exhausted")
 			}
-			return
+			salsa20_wordtobyte(x.input, x.rounds, x.output)
+			x.input[12] += 1
+			if x.input[12] == 0 {
+				x.input[13] += 1
+				/* stopping at 2^70 bytes per nonce is user's responsibility */
+				/* At 1 ns/block: 584+ years to exhaust the stream.
+				 * (2^70 bytes)/(64 bytes/ns)    RonC
+				 */
+				if x.input[13] == 0 {
+					x.eof = true
+				}
+			}
+			p = 0
 		}
-		for i = 0; i < 64; i++ {
-			c[i] = m[i] ^ output[i]
-		}
-		bytes -= 64
-		c = c[64:]
-		m = m[64:]
+		c[i] = m[i] ^ x.output[p]
+		p++
 	}
+	x.next = p
 }
 
 // Decrypt puts plaintext into m given ciphertext c.  Any length is allowed
