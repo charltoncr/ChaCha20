@@ -27,7 +27,7 @@ func (x *ChaCha20_ctx) Decrypt(c, m []byte)
 ```
 Decrypt puts plaintext into m given ciphertext c. Any length is allowed
 for c. The same memory may be used for c and m. Decrypt panics if len(m)
-is lest than len(c) or when the keystream is exhausted after producing 1.2
+is less than len(c) or when the keystream is exhausted after producing 1.2
 zettabytes.
 
 ## func 
