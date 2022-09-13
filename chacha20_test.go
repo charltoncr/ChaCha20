@@ -6,13 +6,15 @@ package chacha20
 import (
 	"bytes"
 	crand "crypto/rand"
+	"io"
 	"log"
-	"os"
 	"testing"
 )
 
+var _ io.Reader = &ChaCha20_ctx{}
+
 func TestChaCha20(t *testing.T) {
-	// Official IETF test vectors for 20 rounds on a zero key and IV
+	// IETF test vector for 20 rounds with a zero key and iv, key length: 32
 	// See https://datatracker.ietf.org/doc/html/draft-strombergson-chacha-test-vectors-00
 	want := []byte{
 		// block 1
@@ -39,21 +41,35 @@ func TestChaCha20(t *testing.T) {
 	iv := make([]byte, 8)
 	ctx := New(key, iv)
 	ctx.Encrypt(got, got)
-	if bytes.Compare(got, want) != 0 {
+	if !bytes.Equal(got, want) {
 		t.Errorf("chacha20.Encrypt(), got %v\nwant %v", got, want)
 	}
 
 	// test piecewise encryption
 	ctx = New(key, iv)
-	op := make([]byte, 8)
+	out := make([]byte, 8)
 	zeros := make([]byte, 8)
 	got = []byte{}
 	for i := 0; i < len(want); i += 8 {
-		ctx.Encrypt(zeros, op)
-		got = append(got, op...)
+		ctx.Encrypt(zeros, out)
+		got = append(got, out...)
 	}
-	if bytes.Compare(got, want) != 0 {
+	if !bytes.Equal(got, want) {
 		t.Errorf("chacha20.Encrypt() piecewise, got %v\nwant %v", got, want)
+	}
+
+	// Keystream should yield same result as Encrypt with input all zeros
+	ctx = New(key, iv)
+	ctx.Keystream(got)
+	if !bytes.Equal(got, want) {
+		t.Errorf("chacha20.Keystream() got %v\nwant %v", got, want)
+	}
+
+	// Seek to block 0 should yield same result with Keystream
+	ctx.Seek(0)
+	ctx.Keystream(got)
+	if !bytes.Equal(got, want) {
+		t.Errorf("chacha20.Keystream() after Seek(0) got %v\nwant %v", got, want)
 	}
 
 	// Do a simple encrypt/decrypt and verify they are complementary.
@@ -64,13 +80,10 @@ func TestChaCha20(t *testing.T) {
 	crand.Read(iv)
 
 	ctx = New(key, iv)
-	m := make([]byte, 50000)
+	m = make([]byte, 50000)
 	crand.Read(m)
-	c := make([]byte, len(m))
+	c = make([]byte, len(m))
 	ctx.Encrypt(m, c)
-	if bytes.Compare(m, c) == 0 {
-		t.Errorf("m: %v; c: %v", m[:5], c[:5])
-	}
 
 	// must decrypt with the same key and iv as used to encrypt
 	want = m
@@ -78,52 +91,27 @@ func TestChaCha20(t *testing.T) {
 	ctx.IvSetup(iv)
 	got = make([]byte, len(c))
 	ctx.Decrypt(c, got)
-	if bytes.Compare(want, got) != 0 {
-		t.Errorf("got: %s; want: %s", got[:5], want[:5])
+	if !bytes.Equal(got, want) {
+		t.Errorf("simple enc/dec - got[:5]: %v; want[:5]: %v", got[:5], want[:5])
 	}
 
-	// Compare encryption by chacha20.go with that of chacha-ref.c from
-	// <https://cr.yp.to/chacha.html>.  chacha-ref.c's rounds must be set to 20
-	// to match chacha20.go's default number of rounds.
-	// Key and iv files were made with 'genfile -r'.  publicDomainEncrypted.dat
-	// was created from publicDomain.txt with chacha20encrypt.c that calls
-	// chacha-ref.c code with rounds set to 20.
-	if key, err = os.ReadFile("publicDomainKey.dat"); err == nil {
-		if iv, err = os.ReadFile("publicDomainIv.dat"); err == nil {
-			if m, err = os.ReadFile("publicDomain.txt"); err == nil {
-				want, err = os.ReadFile("publicDomainEncrypted.dat")
+	// Test for panic when keystream is exhausted.
+	// Panic test code is by Christopher Wellon, public domain.
+	ctx.Seek(0xffffffffffffffff)
+	ctx.Keystream(got[:blockLen])
+	func() {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Errorf("ChaCha20 did not panic at EOF")
 			}
-		}
-	}
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	ctx = New(key, iv)
-	got = make([]byte, len(m))
-	ctx.Encrypt(m, got)
-	if len(got) != len(want) {
-		t.Errorf("Encrypt: len(got): %d; len(want): %d", len(got), len(want))
-	}
-	if bytes.Compare(want, got) != 0 {
-		t.Errorf("Encrypt: got: %v; want: %v", got[:5], want[:5])
-	}
-
-	c = want
-	want = m
-	// must decrypt with the same key and iv as used to encrypt
-	ctx = New(key, iv)
-	ctx.Decrypt(c, got)
-	if len(got) != len(want) {
-		t.Errorf("Decrypt: len(got): %d; len(want): %d", len(got), len(want))
-	}
-	if bytes.Compare(want, got) != 0 {
-		t.Errorf("Decrypt: got: %v; want: %v", got[:5], m[:5])
-	}
+		}()
+		ctx.Encrypt(got[:1], got[:1])
+	}()
+	ctx.Seek(0)
 }
 
 // setup for benchmarks:
-var m, c, key, iv []byte
+var m, c, key, iv, want, got []byte
 var ctx *ChaCha20_ctx
 
 func init() {
@@ -132,7 +120,6 @@ func init() {
 	if err != nil {
 		log.Fatalf("error from crypto/rand.Read: %v", err)
 	}
-	c = make([]byte, len(m))
 	key = make([]byte, 32)
 	crand.Read(key)
 	iv = make([]byte, 8)
@@ -140,29 +127,38 @@ func init() {
 	ctx = New(key, iv)
 }
 
-func BenchmarkChaCha20_8rnds(b *testing.B) {
+func BenchmarkChaCha_8rnds(b *testing.B) {
 	b.SetBytes(int64(len(m)))
 	ctx.SetRounds(8)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		ctx.Encrypt(m, c)
+		ctx.Encrypt(m, m)
 	}
 }
 
-func BenchmarkChaCha20_12rnds(b *testing.B) {
+func BenchmarkChaCha_12rnds(b *testing.B) {
 	b.SetBytes(int64(len(m)))
 	ctx.SetRounds(12)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		ctx.Encrypt(m, c)
+		ctx.Encrypt(m, m)
 	}
 }
 
-func BenchmarkChaCha20_20rnds(b *testing.B) {
+func BenchmarkChaCha_20rnds(b *testing.B) {
 	b.SetBytes(int64(len(m)))
 	ctx.SetRounds(20)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		ctx.Encrypt(m, c)
+		ctx.Encrypt(m, m)
+	}
+}
+
+func BenchmarkChaCha_keystream(b *testing.B) {
+	b.SetBytes(int64(len(m)))
+	ctx.SetRounds(20)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		ctx.Keystream(m)
 	}
 }
