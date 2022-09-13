@@ -38,7 +38,7 @@
 //	   12		 602
 //	   20		 442
 //
-// $Id: chacha20.go,v 4.2 2022-09-13 11:03:53-04 ron Exp $
+// $Id: chacha20.go,v 4.3 2022-09-13 13:19:21-04 ron Exp $
 ////
 
 // Package chacha20 provides public domain ChaCha20 encryption and decryption.
@@ -354,7 +354,7 @@ func (x *ChaCha20_ctx) Encrypt(m, c []byte) {
 
 // Decrypt puts plaintext into m given ciphertext c.  Any length is allowed
 // for c.  The same memory may be used for c and m.  Decrypt panics if len(m) is
-// lest than len(c) or when the keystream is exhausted after producing 1.2
+// less than len(c) or when the keystream is exhausted after producing 1.2
 // zettabytes.
 func (x *ChaCha20_ctx) Decrypt(c, m []byte) {
 	if len(m) < len(c) {
