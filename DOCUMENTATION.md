@@ -57,14 +57,16 @@ not 16 or 32. A key length of 32 is recommended.
 ```go
 func (x *ChaCha20_ctx) Keystream(stream []byte)
 ```
-Keystream fills stream with bytes from x's keystream. Keystream panics when
-the ChaCha keystream is exhausted after producing 1.2 zettabytes.
+Keystream fills stream with cryptographically secure pseudorandom bytes from
+x's keystream when a random key and iv are used. Keystream panics when the
+ChaCha keystream is exhausted after producing 1.2 zettabytes.
 
 ## func 
 ```go
 func (x *ChaCha20_ctx) Read(b []byte) (int, error)
 ```
-Read fills b with bytes from x's keystream. Read always returns len(b) and
+Read fills b with cryptographically secure pseudorandom bytes from x's
+keystream when a random key and iv are used. Read always returns len(b) and
 a nil error. Read implements the io.Reader interface. Read panics when the
 keystream is exhausted after producing 1.2 zettabytes.
 
