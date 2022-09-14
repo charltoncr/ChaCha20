@@ -38,7 +38,7 @@
 //	   12		 602
 //	   20		 442
 //
-// $Id: chacha20.go,v 4.3 2022-09-13 13:19:21-04 ron Exp $
+// $Id: chacha20.go,v 4.4 2022-09-14 09:35:34-04 ron Exp $
 ////
 
 // Package chacha20 provides public domain ChaCha20 encryption and decryption.
@@ -54,7 +54,7 @@ import (
 // Higher numbers consume more compute time.  ChaCha20 requires 20.
 const defaultRounds = 20
 
-// Using individual variables instead of an array provided 32% faster code.
+// Using individual variables instead of an array provides 32% faster code.
 func salsa20_wordtobyte(input []uint32, rounds int, output []byte) {
 	var t uint32
 	var z int
@@ -363,8 +363,9 @@ func (x *ChaCha20_ctx) Decrypt(c, m []byte) {
 	x.Encrypt(c, m)
 }
 
-// Keystream fills stream with bytes from x's keystream.  Keystream panics
-// when the ChaCha keystream is exhausted after producing 1.2 zettabytes.
+// Keystream fills stream with cryptographically secure pseudorandom bytes
+// from x's keystream when a random key and iv are used.  Keystream
+// panics when the ChaCha keystream is exhausted after producing 1.2 zettabytes.
 func (x *ChaCha20_ctx) Keystream(stream []byte) {
 	bytes := len(stream)
 	for i := 0; i < bytes; i++ {
@@ -382,9 +383,10 @@ func (x *ChaCha20_ctx) Keystream(stream []byte) {
 // stop processing before keystream exhaustion with ChaCha hardware
 // acceleration similar to AES hardware acceleration in speed.)
 
-// Read fills b with bytes from x's keystream. Read always returns len(b)
-// and a nil error.  Read implements the io.Reader interface.  Read panics
-// when the keystream is exhausted after producing 1.2 zettabytes.
+// Read fills b with cryptographically secure pseudorandom bytes from x's
+// keystream when a random key and iv are used. Read always returns
+// len(b) and a nil error.  Read implements the io.Reader interface.
+// Read panics when the keystream is exhausted after producing 1.2 zettabytes.
 func (x *ChaCha20_ctx) Read(b []byte) (int, error) {
 	bytes := len(b)
 	for i := 0; i < bytes; i++ {
