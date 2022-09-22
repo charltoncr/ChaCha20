@@ -5,6 +5,7 @@ package chacha20
 
 import (
 	"bytes"
+	"crypto/cipher"
 	crand "crypto/rand"
 	"io"
 	"log"
@@ -12,9 +13,10 @@ import (
 )
 
 var _ io.Reader = &ChaCha20_ctx{}
+var _ cipher.Stream = &ChaCha20_ctx{}
 
 func TestChaCha20(t *testing.T) {
-	// IETF test vector for 20 rounds with a zero key and iv, key length: 32
+	// IETF test vector for 20 rounds with a zero key and iv. Key length: 32
 	// See https://datatracker.ietf.org/doc/html/draft-strombergson-chacha-test-vectors-00
 	want := []byte{
 		// block 1
@@ -42,7 +44,7 @@ func TestChaCha20(t *testing.T) {
 	ctx := New(key, iv)
 	ctx.Encrypt(got, got)
 	if !bytes.Equal(got, want) {
-		t.Errorf("chacha20.Encrypt(), got %v\nwant %v", got, want)
+		t.Errorf("Encrypt(), got %v\nwant %v", got, want)
 	}
 
 	// test piecewise encryption
@@ -55,21 +57,29 @@ func TestChaCha20(t *testing.T) {
 		got = append(got, out...)
 	}
 	if !bytes.Equal(got, want) {
-		t.Errorf("chacha20.Encrypt() piecewise, got %v\nwant %v", got, want)
+		t.Errorf("Encrypt() piecewise, got %v\nwant %v", got, want)
 	}
 
 	// Keystream should yield same result as Encrypt with input all zeros
 	ctx = New(key, iv)
 	ctx.Keystream(got)
 	if !bytes.Equal(got, want) {
-		t.Errorf("chacha20.Keystream() got %v\nwant %v", got, want)
+		t.Errorf("Keystream() got %v\nwant %v", got, want)
 	}
 
 	// Seek to block 0 should yield same result with Keystream
 	ctx.Seek(0)
 	ctx.Keystream(got)
 	if !bytes.Equal(got, want) {
-		t.Errorf("chacha20.Keystream() after Seek(0) got %v\nwant %v", got, want)
+		t.Errorf("Keystream() after Seek(0) got %v\nwant %v", got, want)
+	}
+
+	// Seek to block 0 should yield same result with XORKeyStream
+	ctx.Seek(0)
+	got = make([]byte, 128)
+	ctx.XORKeyStream(got, got)
+	if !bytes.Equal(got, want) {
+		t.Errorf("XORKeyStream() after Seek(0) got %v\nwant %v", got, want)
 	}
 
 	// Do a simple encrypt/decrypt and verify they are complementary.
@@ -77,12 +87,15 @@ func TestChaCha20(t *testing.T) {
 	if err != nil {
 		log.Fatalf("error from crypto/rand.Read: %v", err)
 	}
-	crand.Read(iv)
+	_, err = crand.Read(iv)
+	if err != nil {
+		log.Fatalf("error from crypto/rand.Read: %v", err)
+	}
 
 	ctx = New(key, iv)
 	m = make([]byte, 50000)
+	c := make([]byte, len(m))
 	crand.Read(m)
-	c = make([]byte, len(m))
 	ctx.Encrypt(m, c)
 
 	// must decrypt with the same key and iv as used to encrypt

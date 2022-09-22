@@ -86,4 +86,12 @@ SetRounds ignores any other value. ChaCha20's default number of rounds is
 20. Fewer rounds may be less secure. More rounds consume more compute time.
 ChaCha8 requires 8 rounds, ChaCha12 requires 12 and ChaCha20 requires 20.
 
+## func 
+```go
+func (x *ChaCha20_ctx) XORKeyStream(dst, src []byte)
+```
+XORKeyStream XORs src bytes with ChaCha20's key stream and puts the result
+in dst. XORKeyStream panics if len(dst) is less than len(src), or when the
+ChaCha keystream is exhausted after producing 1.2 zettabytes.
+
 
