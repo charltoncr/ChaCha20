@@ -1,14 +1,10 @@
 // chacha20.go - public domain ChaCha20 encryption/decryption.
-// I, Ron Charlton, used clang -E to preprocess chacha-ref.c from
+// I used clang -E to preprocess chacha-ref.c from
 // <https://cr.yp.to/chacha.html> to produce a prototype chacha20.go file,
-// then hand-edited it to make true Go source code. I added
-// New, Seek, Read and SetRounds, and made the default rounds 20.
+// then hand- and sed-edited it to make true Go source code.  I added
+// New, Seek, XORKeyStream, Read and SetRounds, and made the default rounds 20.
 //
 // Public domain is per <https://creativecommons.org/publicdomain/zero/1.0/>
-//
-// chacha20.go was tested by encrypting a 21KB+ text file with chacha-ref.c
-// and chacha20.go and comparing the two results, they were identical.
-// Rounds must be identical so the comparison can succeed.
 //
 // From the C file (chacha-ref.c):
 //		chacha-ref.c version 20080118
@@ -38,7 +34,7 @@
 //	   12		 602
 //	   20		 442
 //
-// $Id: chacha20.go,v 4.4 2022-09-14 09:35:34-04 ron Exp $
+// $Id: chacha20.go,v 4.6 2022-09-17 16:23:38-04 ron Exp $
 ////
 
 // Package chacha20 provides public domain ChaCha20 encryption and decryption.
@@ -372,6 +368,20 @@ func (x *ChaCha20_ctx) Keystream(stream []byte) {
 		stream[i] = 0
 	}
 	x.Encrypt(stream, stream)
+}
+
+// The idea for adding XORKeyStream and Read came from skeeto's public
+// domain ChaCha implementation.  Neither is copied or ported from that
+// implementation.
+
+// XORKeyStream XORs src bytes with ChaCha20's key stream and puts the result
+// in dst.  XORKeyStream panics if len(dst) is less than len(src), or
+// when the ChaCha keystream is exhausted after producing 1.2 zettabytes.
+func (x *ChaCha20_ctx) XORKeyStream(dst, src []byte) {
+	if len(dst) < len(src) {
+		panic("chacha20.XORKeyStream: insufficient space; dst is shorter than src.")
+	}
+	x.Encrypt(src, dst)
 }
 
 // See the comment in Encrypt() for why the error returned by Read is always nil.
