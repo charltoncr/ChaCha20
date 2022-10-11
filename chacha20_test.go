@@ -74,6 +74,29 @@ func TestChaCha20(t *testing.T) {
 		t.Errorf("Keystream() after Seek(0) got %v\nwant %v", got, want)
 	}
 
+	// See if Read works
+	ctx.Seek(0)
+	n, err := ctx.Read(got)
+	if err != nil {
+		t.Errorf("Read() err: got %v\nwant %v", err, nil)
+	}
+	if n != len(want) {
+		t.Errorf("Read() return length: got %d\nwant %d", n, len(want))
+	}
+	if !bytes.Equal(got, want) {
+		t.Errorf("Read() after Seek(0) got %v\nwant %v", got, want)
+	}
+
+	// Test Read for io.EOF when keystream is exhausted.
+	ctx.Seek(0xffffffffffffffff)
+	n, err = ctx.Read(got[:blockLen])
+	if n != blockLen {
+		t.Errorf("Read() got n = %v  want %v", n, blockLen)
+	}
+	if err != io.EOF {
+		t.Errorf("Read() got %v want %v", err, io.EOF)
+	}
+
 	// Seek to block 0 should yield same result with XORKeyStream
 	ctx.Seek(0)
 	got = make([]byte, 128)
@@ -83,7 +106,7 @@ func TestChaCha20(t *testing.T) {
 	}
 
 	// Do a simple encrypt/decrypt and verify they are complementary.
-	_, err := crand.Read(key)
+	_, err = crand.Read(key)
 	if err != nil {
 		log.Fatalf("error from crypto/rand.Read: %v", err)
 	}
@@ -118,7 +141,7 @@ func TestChaCha20(t *testing.T) {
 				t.Errorf("ChaCha20 did not panic at EOF")
 			}
 		}()
-		ctx.Encrypt(got[:1], got[:1])
+		ctx.Read(got[:1])
 	}()
 	ctx.Seek(0)
 }
@@ -167,11 +190,11 @@ func BenchmarkChaCha_20rnds(b *testing.B) {
 	}
 }
 
-func BenchmarkChaCha_keystream(b *testing.B) {
+func BenchmarkChaCha_Read(b *testing.B) {
 	b.SetBytes(int64(len(m)))
 	ctx.SetRounds(20)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		ctx.Keystream(m)
+		ctx.Read(m)
 	}
 }

@@ -1,10 +1,11 @@
 // chacha20.go - public domain ChaCha20 encryption/decryption.
+// Public domain is per <https://creativecommons.org/publicdomain/zero/1.0/>
+//
 // I used clang -E to preprocess chacha-ref.c from
 // <https://cr.yp.to/chacha.html> to produce a prototype chacha20.go file,
 // then hand- and sed-edited it to make true Go source code.  I added
-// New, Seek, XORKeyStream, Read and SetRounds, and made the default rounds 20.
-//
-// Public domain is per <https://creativecommons.org/publicdomain/zero/1.0/>
+// New, Seek, XORKeyStream, Read and SetRounds, and made the default number of
+// rounds 20.
 //
 // From the C file (chacha-ref.c):
 //		chacha-ref.c version 20080118
@@ -18,7 +19,7 @@
 //
 // Type byte must be an alias for uint8.
 //
-// Example use (encrypt a file to another file):
+// Example use (encrypt a file to another file; not sufficient for crypto. use):
 //		// 32-byte key and 8-byte iv assumed.
 //		// (error checks omitted)
 //		b, err := os.ReadFile("myfile")
@@ -34,7 +35,7 @@
 //	   12		 602
 //	   20		 442
 //
-// $Id: chacha20.go,v 4.6 2022-09-17 16:23:38-04 ron Exp $
+// $Id: chacha20.go,v 4.17 2022-10-11 07:10:00-04 ron Exp $
 ////
 
 // Package chacha20 provides public domain ChaCha20 encryption and decryption.
@@ -44,9 +45,10 @@ package chacha20
 
 import (
 	"encoding/binary"
+	"io"
 )
 
-// defaultRounds can be 8, 12 or 20.  Lower numbers are likely less secure.
+// Rounds can be 8, 12 or 20.  Lower numbers are likely less secure.
 // Higher numbers consume more compute time.  ChaCha20 requires 20.
 const defaultRounds = 20
 
@@ -54,24 +56,23 @@ const defaultRounds = 20
 func salsa20_wordtobyte(input []uint32, rounds int, output []byte) {
 	var t uint32
 	var z int
-	var a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p uint32
 
-	a = input[0]
-	b = input[1]
-	c = input[2]
-	d = input[3]
-	e = input[4]
-	f = input[5]
-	g = input[6]
-	h = input[7]
-	i = input[8]
-	j = input[9]
-	k = input[10]
-	l = input[11]
-	m = input[12]
-	n = input[13]
-	o = input[14]
-	p = input[15]
+	a := input[0]
+	b := input[1]
+	c := input[2]
+	d := input[3]
+	e := input[4]
+	f := input[5]
+	g := input[6]
+	h := input[7]
+	i := input[8]
+	j := input[9]
+	k := input[10]
+	l := input[11]
+	m := input[12]
+	n := input[13]
+	o := input[14]
+	p := input[15]
 
 	for z = rounds; z > 0; z -= 2 {
 		a += e
@@ -239,9 +240,10 @@ func New(key, iv []byte) (ctx *ChaCha20_ctx) {
 	return
 }
 
-// SetRounds sets the number of rounds used by Encrypt, Decrypt, Read and
-// Keystream for a ChaCha20 context.  The valid values for r are
-// 8, 12 and 20. SetRounds ignores any other value.  ChaCha20's default number
+// SetRounds sets the number of rounds used by Encrypt, Decrypt, Read,
+// XORKeyStream and Keystream for a ChaCha20 context.
+// The valid values for r are 8, 12 and 20.
+// SetRounds ignores any other value.  ChaCha20's default number
 // of rounds is 20.  Fewer rounds may be less secure.  More
 // rounds consume more compute time.  ChaCha8 requires 8 rounds, ChaCha12
 // requires 12 and ChaCha20 requires 20.
@@ -306,27 +308,30 @@ func (x *ChaCha20_ctx) IvSetup(iv []byte) {
 	x.input[14] = binary.LittleEndian.Uint32(iv[0:])
 	x.input[15] = binary.LittleEndian.Uint32(iv[4:])
 	x.next = blockLen
+	x.eof = false
 }
 
 // Encrypt puts ciphertext into c given plaintext m.  Any length is allowed
 // for m.  The same memory may be used for m and c.  Encrypt panics if len(c) is
-// less than len(m) or when the keystream is exhausted after producing 1.2
-// zettabytes.
-func (x *ChaCha20_ctx) Encrypt(m, c []byte) {
-	var i int
-
+// less than len(m).   It returns io.EOF when the keystream is exhausted
+// after producing 1.2 zettabytes.  It will panic if called again with the
+// the same context after io.EOF is returned, unless re-initialized.
+func (x *ChaCha20_ctx) Encrypt(m, c []byte) (n int, err error) {
 	bytes := len(m)
 	if bytes == 0 {
-		return
+		return 0, nil
 	}
 	if len(c) < bytes {
-		panic("chacha20.Encrypt: insufficient space; c is shorter than m is.")
+		panic("chacha20.Encrypt: insufficient space; c is shorter than m.")
 	}
 	idx := x.next
-	for i = 0; i < bytes; i++ {
+	if x.eof && idx >= blockLen {
+		panic("chacha20: keystream is exhausted")
+	}
+	for n = 0; n < bytes; n++ {
 		if idx >= blockLen {
 			if x.eof {
-				panic("chacha20: keystream is exhausted")
+				return n, io.EOF
 			}
 			salsa20_wordtobyte(x.input, x.rounds, x.output)
 			x.input[12] += 1
@@ -342,21 +347,25 @@ func (x *ChaCha20_ctx) Encrypt(m, c []byte) {
 			}
 			idx = 0
 		}
-		c[i] = m[i] ^ x.output[idx]
+		c[n] = m[n] ^ x.output[idx]
 		idx++
 	}
 	x.next = idx
+	if x.eof && idx >= blockLen {
+		err = io.EOF
+	}
+	return
 }
 
 // Decrypt puts plaintext into m given ciphertext c.  Any length is allowed
 // for c.  The same memory may be used for c and m.  Decrypt panics if len(m) is
 // less than len(c) or when the keystream is exhausted after producing 1.2
 // zettabytes.
-func (x *ChaCha20_ctx) Decrypt(c, m []byte) {
+func (x *ChaCha20_ctx) Decrypt(c, m []byte) (int, error) {
 	if len(m) < len(c) {
-		panic("chacha20.Decrypt: insufficient space; m is shorter than c is.")
+		panic("chacha20.Decrypt: insufficient space; m is shorter than c.")
 	}
-	x.Encrypt(c, m)
+	return x.Encrypt(c, m)
 }
 
 // Keystream fills stream with cryptographically secure pseudorandom bytes
@@ -364,8 +373,8 @@ func (x *ChaCha20_ctx) Decrypt(c, m []byte) {
 // panics when the ChaCha keystream is exhausted after producing 1.2 zettabytes.
 func (x *ChaCha20_ctx) Keystream(stream []byte) {
 	bytes := len(stream)
-	for i := 0; i < bytes; i++ {
-		stream[i] = 0
+	for n := 0; n < bytes; n++ {
+		stream[n] = 0
 	}
 	x.Encrypt(stream, stream)
 }
@@ -374,6 +383,7 @@ func (x *ChaCha20_ctx) Keystream(stream []byte) {
 // domain ChaCha implementation.  Neither is copied or ported from that
 // implementation.
 
+// XORKeyStream implements the crypto/cipher.Stream interface.
 // XORKeyStream XORs src bytes with ChaCha20's key stream and puts the result
 // in dst.  XORKeyStream panics if len(dst) is less than len(src), or
 // when the ChaCha keystream is exhausted after producing 1.2 zettabytes.
@@ -384,25 +394,15 @@ func (x *ChaCha20_ctx) XORKeyStream(dst, src []byte) {
 	x.Encrypt(src, dst)
 }
 
-// See the comment in Encrypt() for why the error returned by Read is always nil.
-// If the speed was 10 blocks/ns, the keystream wouldn't be exhausted for
-// 58.4+ years, a long time for a process to run continuously.  10 blocks/ns
-// is approximately 2,000 times faster than an Apple 3.2 GHz M1 Mac mini
-// computer.  (With AES hardware acceleration the Mac mini produces about
-// 1.3 bytes/ns with arc4random_buf.  This speed yields 28,778 years of non-
-// stop processing before keystream exhaustion with ChaCha hardware
-// acceleration similar to AES hardware acceleration in speed.)
-
 // Read fills b with cryptographically secure pseudorandom bytes from x's
-// keystream when a random key and iv are used. Read always returns
-// len(b) and a nil error.  Read implements the io.Reader interface.
-// Read panics when the keystream is exhausted after producing 1.2 zettabytes.
+// keystream when a random key and iv are used.
+// Read implements the io.Reader interface.
+// Read returns io.EOF when the keystream is exhausted after producing 1.2
+// zettabytes.
 func (x *ChaCha20_ctx) Read(b []byte) (int, error) {
-	bytes := len(b)
-	for i := 0; i < bytes; i++ {
+	n := len(b)
+	for i := 0; i < n; i++ {
 		b[i] = 0
 	}
-	x.Encrypt(b, b)
-
-	return bytes, nil
+	return x.Encrypt(b, b)
 }
