@@ -27,15 +27,15 @@
 //		ctx.Encrypt(b, b)
 //		err = os.WriteFile("myfile.encrypted", b, 0644)
 //
-// chacha20.go v3.5 Encrypt on a 3.2 GHz M1 Mac mini (go test -bench=.):
+// chacha20.go v4.19 Encrypt on a 3.2 GHz M1 Mac mini (go test -bench=.):
 //
 //	 Rounds	 	 MB/s
 //	 ------		 ----
-//	    8		 745
+//	    8		 739
 //	   12		 602
-//	   20		 442
+//	   20		 440
 //
-// $Id: chacha20.go,v 4.17 2022-10-11 07:10:00-04 ron Exp $
+// $Id: chacha20.go,v 4.19 2022-10-11 14:44:34-04 ron Exp $
 ////
 
 // Package chacha20 provides public domain ChaCha20 encryption and decryption.
@@ -271,7 +271,7 @@ func (x *ChaCha20_ctx) KeySetup(k []byte) {
 	kbytes := len(k)
 
 	if kbytes != 16 && kbytes != 32 {
-		panic("chacha20.KeySetup: invalid key length; must be 16 or 32 bytes.")
+		panic("chacha20: invalid key length; must be 16 or 32 bytes.")
 	}
 
 	x.input[4] = binary.LittleEndian.Uint32(k[0:])
@@ -301,7 +301,7 @@ func (x *ChaCha20_ctx) KeySetup(k []byte) {
 // It also sets the context's counter to 0.  IvSetup panics if len(iv) is not 8.
 func (x *ChaCha20_ctx) IvSetup(iv []byte) {
 	if len(iv) != 8 {
-		panic("chacha20.IvSetup: invalid iv length; must be 8.")
+		panic("chacha20: invalid iv length; must be 8.")
 	}
 	x.input[12] = 0
 	x.input[13] = 0
@@ -317,20 +317,21 @@ func (x *ChaCha20_ctx) IvSetup(iv []byte) {
 // after producing 1.2 zettabytes.  It will panic if called again with the
 // the same context after io.EOF is returned, unless re-initialized.
 func (x *ChaCha20_ctx) Encrypt(m, c []byte) (n int, err error) {
-	bytes := len(m)
-	if bytes == 0 {
+	size := len(m)
+	if size == 0 {
 		return 0, nil
 	}
-	if len(c) < bytes {
+	if len(c) < size {
 		panic("chacha20.Encrypt: insufficient space; c is shorter than m.")
 	}
 	idx := x.next
 	if x.eof && idx >= blockLen {
 		panic("chacha20: keystream is exhausted")
 	}
-	for n = 0; n < bytes; n++ {
+	for n = 0; n < size; n++ {
 		if idx >= blockLen {
 			if x.eof {
+				x.next = idx
 				return n, io.EOF
 			}
 			salsa20_wordtobyte(x.input, x.rounds, x.output)
@@ -359,8 +360,9 @@ func (x *ChaCha20_ctx) Encrypt(m, c []byte) (n int, err error) {
 
 // Decrypt puts plaintext into m given ciphertext c.  Any length is allowed
 // for c.  The same memory may be used for c and m.  Decrypt panics if len(m) is
-// less than len(c) or when the keystream is exhausted after producing 1.2
-// zettabytes.
+// less than len(c).   It returns io.EOF when the keystream is exhausted
+// after producing 1.2 zettabytes.  It will panic if called again with the
+// the same context after io.EOF is returned, unless re-initialized.
 func (x *ChaCha20_ctx) Decrypt(c, m []byte) (int, error) {
 	if len(m) < len(c) {
 		panic("chacha20.Decrypt: insufficient space; m is shorter than c.")
@@ -398,7 +400,8 @@ func (x *ChaCha20_ctx) XORKeyStream(dst, src []byte) {
 // keystream when a random key and iv are used.
 // Read implements the io.Reader interface.
 // Read returns io.EOF when the keystream is exhausted after producing 1.2
-// zettabytes.
+// zettabytes.  It will panic if called again with the
+// the same context after io.EOF is returned, unless re-initialized.
 func (x *ChaCha20_ctx) Read(b []byte) (int, error) {
 	n := len(b)
 	for i := 0; i < n; i++ {

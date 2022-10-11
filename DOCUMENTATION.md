@@ -25,10 +25,11 @@ and iv. The default number of rounds is 20.
 ```go
 func (x *ChaCha20_ctx) Decrypt(c, m []byte) (int, error)
 ```
-Decrypt puts plaintext into m given ciphertext c. Any length is allowed
-for c. The same memory may be used for c and m. Decrypt panics if len(m)
-is less than len(c) or when the keystream is exhausted after producing 1.2
-zettabytes.
+Decrypt puts plaintext into m given ciphertext c. Any length is allowed for
+c. The same memory may be used for c and m. Decrypt panics if len(m) is
+less than len(c). It returns io.EOF when the keystream is exhausted after
+producing 1.2 zettabytes. It will panic if called again with the the same
+context after io.EOF is returned, unless re-initialized.
 
 ## func 
 ```go
@@ -69,7 +70,8 @@ func (x *ChaCha20_ctx) Read(b []byte) (int, error)
 Read fills b with cryptographically secure pseudorandom bytes from x's
 keystream when a random key and iv are used. Read implements the io.Reader
 interface. Read returns io.EOF when the keystream is exhausted after
-producing 1.2 zettabytes.
+producing 1.2 zettabytes. It will panic if called again with the the same
+context after io.EOF is returned, unless re-initialized.
 
 ## func 
 ```go
