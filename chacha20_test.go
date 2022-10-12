@@ -74,7 +74,7 @@ func TestChaCha20(t *testing.T) {
 		t.Errorf("Keystream() after Seek(0) got %v\nwant %v", got, want)
 	}
 
-	// See if Read works
+	// Test Read
 	ctx.Seek(0)
 	n, err := ctx.Read(got)
 	if err != nil {
@@ -87,15 +87,23 @@ func TestChaCha20(t *testing.T) {
 		t.Errorf("Read() after Seek(0) got %v\nwant %v", got, want)
 	}
 
-	// Test Read for io.EOF when keystream is exhausted.
+	// Test Read for io.EOF when keystream is exhausted, then panic.
 	ctx.Seek(0xffffffffffffffff)
-	n, err = ctx.Read(got[:blockLen])
-	if n != blockLen {
-		t.Errorf("Read() got n = %v  want %v", n, blockLen)
-	}
+	n, err = ctx.Read(got)
 	if err != io.EOF {
 		t.Errorf("Read() got %v want %v", err, io.EOF)
 	}
+	if n != blockLen {
+		t.Errorf("Read() return length at EOF: got %d\nwant %d", n, blockLen)
+	}
+	func() {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Errorf("ChaCha20 did not panic for Read after EOF")
+			}
+		}()
+		ctx.Read(got[:1])
+	}()
 
 	// Seek to block 0 should yield same result with XORKeyStream
 	ctx.Seek(0)
@@ -123,26 +131,12 @@ func TestChaCha20(t *testing.T) {
 
 	// must decrypt with the same key and iv as used to encrypt
 	want = m
-	ctx.KeySetup(key)
-	ctx.IvSetup(iv)
+	ctx = New(key, iv)
 	got = make([]byte, len(c))
 	ctx.Decrypt(c, got)
 	if !bytes.Equal(got, want) {
 		t.Errorf("simple enc/dec - got[:5]: %v; want[:5]: %v", got[:5], want[:5])
 	}
-
-	// Test for panic when keystream is exhausted.
-	// Panic test code is by Christopher Wellon, public domain.
-	ctx.Seek(0xffffffffffffffff)
-	ctx.Keystream(got[:blockLen])
-	func() {
-		defer func() {
-			if r := recover(); r == nil {
-				t.Errorf("ChaCha20 did not panic at EOF")
-			}
-		}()
-		ctx.Read(got[:1])
-	}()
 	ctx.Seek(0)
 }
 
