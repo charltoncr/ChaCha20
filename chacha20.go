@@ -35,7 +35,7 @@
 //	   12		 602
 //	   20		 440
 //
-// $Id: chacha20.go,v 4.19 2022-10-11 14:44:34-04 ron Exp $
+// $Id: chacha20.go,v 4.21 2022-10-12 05:41:55-04 ron Exp $
 ////
 
 // Package chacha20 provides public domain ChaCha20 encryption and decryption.
@@ -314,7 +314,7 @@ func (x *ChaCha20_ctx) IvSetup(iv []byte) {
 // Encrypt puts ciphertext into c given plaintext m.  Any length is allowed
 // for m.  The same memory may be used for m and c.  Encrypt panics if len(c) is
 // less than len(m).   It returns io.EOF when the keystream is exhausted
-// after producing 1.2 zettabytes.  It will panic if called again with the
+// after producing 1.2 zettabytes.  It will panic if called with the
 // the same context after io.EOF is returned, unless re-initialized.
 func (x *ChaCha20_ctx) Encrypt(m, c []byte) (n int, err error) {
 	size := len(m)
@@ -361,7 +361,7 @@ func (x *ChaCha20_ctx) Encrypt(m, c []byte) (n int, err error) {
 // Decrypt puts plaintext into m given ciphertext c.  Any length is allowed
 // for c.  The same memory may be used for c and m.  Decrypt panics if len(m) is
 // less than len(c).   It returns io.EOF when the keystream is exhausted
-// after producing 1.2 zettabytes.  It will panic if called again with the
+// after producing 1.2 zettabytes.  It will panic if called with the
 // the same context after io.EOF is returned, unless re-initialized.
 func (x *ChaCha20_ctx) Decrypt(c, m []byte) (int, error) {
 	if len(m) < len(c) {
@@ -374,11 +374,8 @@ func (x *ChaCha20_ctx) Decrypt(c, m []byte) (int, error) {
 // from x's keystream when a random key and iv are used.  Keystream
 // panics when the ChaCha keystream is exhausted after producing 1.2 zettabytes.
 func (x *ChaCha20_ctx) Keystream(stream []byte) {
-	bytes := len(stream)
-	for n := 0; n < bytes; n++ {
-		stream[n] = 0
-	}
-	x.Encrypt(stream, stream)
+	c := make([]byte, len(stream))
+	x.Encrypt(c, stream)
 }
 
 // The idea for adding XORKeyStream and Read came from skeeto's public
@@ -386,7 +383,7 @@ func (x *ChaCha20_ctx) Keystream(stream []byte) {
 // implementation.
 
 // XORKeyStream implements the crypto/cipher.Stream interface.
-// XORKeyStream XORs src bytes with ChaCha20's key stream and puts the result
+// XORKeyStream XORs src bytes with ChaCha's key stream and puts the result
 // in dst.  XORKeyStream panics if len(dst) is less than len(src), or
 // when the ChaCha keystream is exhausted after producing 1.2 zettabytes.
 func (x *ChaCha20_ctx) XORKeyStream(dst, src []byte) {
@@ -400,12 +397,9 @@ func (x *ChaCha20_ctx) XORKeyStream(dst, src []byte) {
 // keystream when a random key and iv are used.
 // Read implements the io.Reader interface.
 // Read returns io.EOF when the keystream is exhausted after producing 1.2
-// zettabytes.  It will panic if called again with the
+// zettabytes.  It will panic if called with the
 // the same context after io.EOF is returned, unless re-initialized.
 func (x *ChaCha20_ctx) Read(b []byte) (int, error) {
-	n := len(b)
-	for i := 0; i < n; i++ {
-		b[i] = 0
-	}
-	return x.Encrypt(b, b)
+	c := make([]byte, len(b))
+	return x.Encrypt(c, b)
 }

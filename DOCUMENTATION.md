@@ -28,8 +28,8 @@ func (x *ChaCha20_ctx) Decrypt(c, m []byte) (int, error)
 Decrypt puts plaintext into m given ciphertext c. Any length is allowed for
 c. The same memory may be used for c and m. Decrypt panics if len(m) is
 less than len(c). It returns io.EOF when the keystream is exhausted after
-producing 1.2 zettabytes. It will panic if called again with the the same
-context after io.EOF is returned, unless re-initialized.
+producing 1.2 zettabytes. It will panic if called with the the same context
+after io.EOF is returned, unless re-initialized.
 
 ## func 
 ```go
@@ -38,8 +38,8 @@ func (x *ChaCha20_ctx) Encrypt(m, c []byte) (n int, err error)
 Encrypt puts ciphertext into c given plaintext m. Any length is allowed for
 m. The same memory may be used for m and c. Encrypt panics if len(c) is
 less than len(m). It returns io.EOF when the keystream is exhausted after
-producing 1.2 zettabytes. It will panic if called again with the the same
-context after io.EOF is returned, unless re-initialized.
+producing 1.2 zettabytes. It will panic if called with the the same context
+after io.EOF is returned, unless re-initialized.
 
 ## func 
 ```go
@@ -70,8 +70,8 @@ func (x *ChaCha20_ctx) Read(b []byte) (int, error)
 Read fills b with cryptographically secure pseudorandom bytes from x's
 keystream when a random key and iv are used. Read implements the io.Reader
 interface. Read returns io.EOF when the keystream is exhausted after
-producing 1.2 zettabytes. It will panic if called again with the the same
-context after io.EOF is returned, unless re-initialized.
+producing 1.2 zettabytes. It will panic if called with the the same context
+after io.EOF is returned, unless re-initialized.
 
 ## func 
 ```go
@@ -95,7 +95,7 @@ ChaCha20 requires 20.
 func (x *ChaCha20_ctx) XORKeyStream(dst, src []byte)
 ```
 XORKeyStream implements the crypto/cipher.Stream interface. XORKeyStream
-XORs src bytes with ChaCha20's key stream and puts the result in dst.
+XORs src bytes with ChaCha's key stream and puts the result in dst.
 XORKeyStream panics if len(dst) is less than len(src), or when the ChaCha
 keystream is exhausted after producing 1.2 zettabytes.
 
