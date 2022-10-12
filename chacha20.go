@@ -35,12 +35,17 @@
 //	   12		 602
 //	   20		 440
 //
-// $Id: chacha20.go,v 4.21 2022-10-12 05:41:55-04 ron Exp $
+// $Id: chacha20.go,v 4.25 2022-10-12 10:03:41-04 ron Exp $
 ////
 
 // Package chacha20 provides public domain ChaCha20 encryption and decryption.
 // Package chacha20 is derived from public domain chacha-ref.c at
 // <https://cr.yp.to/chacha.html>.
+//
+// Some chacha20 methods panic when the ChaCha keystream is exhausted
+// after producing about 1.2 zettabytes.  A zettabyte is so much data that
+// it is nearly impossible to generate that much.  At 1 ns/block it
+// would take 584+ years to generate 1.2 zettabytes.
 package chacha20
 
 import (
@@ -331,8 +336,7 @@ func (x *ChaCha20_ctx) Encrypt(m, c []byte) (n int, err error) {
 	for n = 0; n < size; n++ {
 		if idx >= blockLen {
 			if x.eof {
-				x.next = idx
-				return n, io.EOF
+				break
 			}
 			salsa20_wordtobyte(x.input, x.rounds, x.output)
 			x.input[12] += 1
@@ -400,6 +404,6 @@ func (x *ChaCha20_ctx) XORKeyStream(dst, src []byte) {
 // zettabytes.  It will panic if called with the
 // the same context after io.EOF is returned, unless re-initialized.
 func (x *ChaCha20_ctx) Read(b []byte) (int, error) {
-	c := make([]byte, len(b))
+	c := make([]byte, len(b)) // faster than for loop with assignment
 	return x.Encrypt(c, b)
 }

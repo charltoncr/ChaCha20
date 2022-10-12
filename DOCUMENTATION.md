@@ -6,6 +6,12 @@ Package chacha20 provides public domain ChaCha20 encryption and decryption.
 Package chacha20 is derived from public domain chacha-ref.c at
 <https://cr.yp.to/chacha.html>.
 ```
+```go
+Some chacha20 methods panic when the ChaCha keystream is exhausted after
+producing about 1.2 zettabytes. A zettabyte is so much data that it is nearly
+impossible to generate that much. At 1 ns/block it would take 584+ years to
+generate 1.2 zettabytes.
+```
 ## TYPES
 
 ChaCha20_ctx contains state information for a ChaCha20 context.
