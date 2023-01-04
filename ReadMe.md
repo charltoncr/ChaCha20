@@ -1,5 +1,5 @@
 <!-- title: ChaCha20 Read Me -->
-<!-- $Id: ReadMe.md,v 1.21 2022-09-13 11:13:38-04 ron Exp $ -->
+<!-- $Id: ReadMe.md,v 1.22 2023-01-04 15:07:24-05 ron Exp $ -->
 
 # ChaCha20 public domain encryption and decryption in Go
 
@@ -16,7 +16,7 @@ ChaCha20 has been
 Example use:
 
 ```go
-import "chacha20"
+import "github.com/charltoncr/chacha20"
 import "crypto/rand"
 // ...
 var m = []byte("This is a test.")    // put a real message in m here
