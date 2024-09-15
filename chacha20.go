@@ -27,15 +27,15 @@
 //		ctx.Encrypt(b, b)
 //		err = os.WriteFile("myfile.encrypted", b, 0644)
 //
-// chacha20.go v4.19 Encrypt on a 3.2 GHz M1 Mac mini (go test -bench=.):
+// chacha20.go v4.25 Encrypt on a 3.504 GHz M2 Mac Studio (go test -bench=.):
 //
 //	 Rounds	 	 MB/s
 //	 ------		 ----
-//	    8		 739
-//	   12		 602
-//	   20		 440
+//	    8		 807
+//	   12		 657
+//	   20		 485
 //
-// $Id: chacha20.go,v 4.25 2022-10-12 10:03:41-04 ron Exp $
+// $Id: chacha20.go,v 4.26 2024-09-15 14:13:30-04 ron Exp $
 ////
 
 // Package chacha20 provides public domain ChaCha20 encryption and decryption.
@@ -378,7 +378,7 @@ func (x *ChaCha20_ctx) Decrypt(c, m []byte) (int, error) {
 // from x's keystream when a random key and iv are used.  Keystream
 // panics when the ChaCha keystream is exhausted after producing 1.2 zettabytes.
 func (x *ChaCha20_ctx) Keystream(stream []byte) {
-	c := make([]byte, len(stream))
+	c := make([]byte, len(stream)) // faster than for loop with assignment
 	x.Encrypt(c, stream)
 }
 
