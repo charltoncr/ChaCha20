@@ -1,6 +1,9 @@
 // chacha20.go - public domain ChaCha20 encryption/decryption.
 // Public domain is per <https://creativecommons.org/publicdomain/zero/1.0/>
 //
+// See https://en.wikipedia.org/wiki/Salsa20#ChaCha_variant
+// for a description of chacha20.
+//
 // I used clang -E to preprocess chacha-ref.c from
 // <https://cr.yp.to/chacha.html> to produce a prototype chacha20.go file,
 // then hand- and sed-edited it to make true Go source code.  I added
@@ -35,7 +38,7 @@
 //	   12		 657
 //	   20		 485
 //
-// $Id: chacha20.go,v 4.26 2024-09-15 14:13:30-04 ron Exp $
+// $Id: chacha20.go,v 4.29 2024-10-15 16:08:21-04 ron Exp $
 ////
 
 // Package chacha20 provides public domain ChaCha20 encryption and decryption.
@@ -260,8 +263,10 @@ func (x *ChaCha20_ctx) SetRounds(r int) {
 
 // Seek moves x directly to 64-byte block number n in constant time.
 func (x *ChaCha20_ctx) Seek(n uint64) {
-	x.input[12] = uint32(n)
-	x.input[13] = uint32(n >> 32)
+	var b [8]byte
+	binary.LittleEndian.PutUint64(b[:], n)
+	x.input[12] = binary.LittleEndian.Uint32(b[0:])
+	x.input[13] = binary.LittleEndian.Uint32(b[4:])
 	x.eof = false
 	x.next = blockLen
 }
