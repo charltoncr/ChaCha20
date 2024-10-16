@@ -74,11 +74,19 @@ func TestChaCha20(t *testing.T) {
 		t.Errorf("Keystream() after Seek(0) got %v\nwant %v", got, want)
 	}
 
+	// test Seek(1) correct endian-ness
+	ctx.Seek(1)
+	block2 := make([]byte, blockLen)
+	ctx.Keystream(block2)
+	if !bytes.Equal(block2, want[blockLen:]) {
+		t.Errorf("Seek(1), got %v\nwant %v", got, want[blockLen:])
+	}
+
 	// Test Read
 	ctx.Seek(0)
 	n, err := ctx.Read(got)
 	if err != nil {
-		t.Errorf("Read() err: got %v\nwant %v", err, nil)
+		t.Errorf("Read() err:\ngot %v\nwant %v", err, nil)
 	}
 	if n != len(want) {
 		t.Errorf("Read() return length: got %d\nwant %d", n, len(want))
@@ -88,6 +96,7 @@ func TestChaCha20(t *testing.T) {
 	}
 
 	// Test Read for io.EOF when keystream is exhausted, then panic.
+	got = make([]byte, 64)
 	ctx.Seek(0xffffffffffffffff)
 	n, err = ctx.Read(got)
 	if err != io.EOF {
@@ -131,7 +140,7 @@ func TestChaCha20(t *testing.T) {
 
 	// must decrypt with the same key and iv as used to encrypt
 	want = m
-	ctx = New(key, iv)
+	ctx.Seek(0)
 	got = make([]byte, len(c))
 	ctx.Decrypt(c, got)
 	if !bytes.Equal(got, want) {
@@ -141,7 +150,7 @@ func TestChaCha20(t *testing.T) {
 }
 
 // setup for benchmarks:
-var m, c, key, iv, want, got []byte
+var m, key, iv []byte
 var ctx *ChaCha20_ctx
 
 func init() {
