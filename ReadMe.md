@@ -1,5 +1,5 @@
 <!-- title: ChaCha20 Read Me -->
-<!-- $Id: ReadMe.md,v 1.22 2023-01-04 15:07:24-05 ron Exp $ -->
+<!-- $Id: ReadMe.md,v 1.25 2024-11-20 14:47:55-05 ron Exp $ -->
 
 # ChaCha20 public domain encryption and decryption in Go
 
@@ -9,6 +9,9 @@ domain [ref implementation](https://cr.yp.to/chacha.html).
 chacha20.go and chacha20_test.go are in the
 [public domain](https://creativecommons.org/publicdomain/zero/1.0/)
 and may be used for any purpose.
+
+This version uses goroutines. That yields 10X the performance on
+a 3.504 GHz 12-processor Mac Studio with M2 Max.
 
 ChaCha20 has been
 [widely adopted](https://en.wikipedia.org/wiki/Salsa20#ChaCha20_adoption).
