@@ -36,21 +36,21 @@
 //		ctx.Encrypt(b, b)
 //		err = os.WriteFile("myfile.encrypted", b, 0644)
 //
-// chacha20.go v5.0.1.13 Encrypt on 3.504 GHz M2 Mac Studio with 5,000,000-byte
+// chacha20.go v6.1 Encrypt on 3.504 GHz M2 Mac Studio with 5,000,000-byte
 // message, and 500 blocks-per-chunk parallel processing (go test -bench=.)
-// (also true with version 5.0.1.29):
+// (also true with v5.0.1.30):
 //
 //	 Rounds	 	 GB/s   ns/block
 //	 ------		 -----   --------
-//	    8		 6.716	   12
-//	   12		 5.634     14
-//	   20		 4.201     19
+//	    8		 6.716	   10
+//	   12		 5.634     12
+//	   20		 4.201     15
 //
 // See an alternate implementation of chacha at
 // https://github.com/skeeto/chacha-go.  That implementation is vastly slower
 // than this implementation.
 //
-// $Id: chacha20.go,v 6.1 2024-11-20 15:05:48-05 ron Exp $
+// $Id: chacha20.go,v 6.7 2024-11-21 10:04:09-05 ron Exp $
 ////
 
 // Package chacha20 provides public domain ChaCha20 encryption and decryption.
@@ -78,7 +78,8 @@ import (
 // true to show all debug messages
 var debug = false
 
-// true to show n after each of pre-block, in block and post-block processing
+// true to show only n after each of pre-block, in block and post-block
+// processing
 var debugOutline = false
 
 // Rounds can be 8, 12 or 20.  Lower numbers are likely less secure.
@@ -406,7 +407,7 @@ func (x *ChaCha20_ctx) Encrypt(m, c []byte) (n int, err error) {
 		idx++
 	}
 	if debug || debugOutline {
-		fmt.Printf("\nfinished pre-block processing; n=%d\n", n)
+		fmt.Printf("\nfinished pre-chunk processing; n=%d\n", n)
 	}
 	x.next = idx
 	if x.eof && idx >= blockLen {
@@ -415,10 +416,10 @@ func (x *ChaCha20_ctx) Encrypt(m, c []byte) (n int, err error) {
 	}
 
 	// === Chunk-process in goroutines if possible. Use multi-block chunks.
-	// Messages longer than 32,000 bytes will be block-processed. ===
+	// Messages longer than 32,000 bytes will be chunk-processed. ===
 	blocksPerChunk := 500
 	chunkLen := blockLen * blocksPerChunk
-	if size-n >= chunkLen {
+	if size-n > chunkLen {
 		wg := sync.WaitGroup{}
 		baseBlock := x.getCounter()
 		chunkCount := uint64((size - n) / chunkLen)
@@ -428,65 +429,68 @@ func (x *ChaCha20_ctx) Encrypt(m, c []byte) (n int, err error) {
 		}
 		eof := x.eof
 		var chunk uint64
-		// next line overflows block if baseBlock == 0xffffffffffffffff
-		bailOut := false
-		for chunk = 0; chunk < chunkCount; chunk += 1 {
+		for chunk = 0; chunk < chunkCount; chunk++ {
+			bailOut := false
 			wg.Add(1)
 			go func(r1 ChaCha20_ctx, blk uint64, ni int) {
 				defer wg.Done()
 				r := &r1
 				r.Seek(blk)
 				blockStop := blk + uint64(blocksPerChunk)
-				if blockStop > blk {
-					for bk := blk; bk < blockStop; bk++ {
-						salsa20_wordtobyte(r.input[:], r.rounds, r.output[:])
-						r.input[12]++
-						if r.input[12] == 0 {
-							r.input[13]++
-						}
-						for i := 0; i < blockLen; i++ {
-							c[ni] = m[ni] ^ r.output[i]
-							ni++
-						}
-						/* stopping at 2^70 bytes per nonce is user's
-						// responsibility */
-						/* At 1 ns/block: 584+ years to exhaust the key stream.
-						 * (2^70 bytes)/(64 bytes/ns)    RonC
-						 */
-						if r.input[12] == 0 && r.input[13] == 0 {
-							eof = true
-							bailOut = true
-							return
-						}
+				if blockStop < blk {
+					// would overflow before bk reaches blockStop
+					eof = true
+					bailOut = true
+					blockStop = 0xffffffffffffffff
+				}
+				for bk := blk; bk < blockStop; bk++ {
+					salsa20_wordtobyte(r.input[:], r.rounds, r.output[:])
+					r.input[12]++
+					if r.input[12] == 0 {
+						r.input[13]++
+					}
+					for i := 0; i < blockLen; i++ {
+						c[ni] = m[ni] ^ r.output[i]
+						ni++
 					}
 				}
+				if bailOut {
+					n = ni
+					if debug {
+						fmt.Printf("chunking bailOut\n")
+					}
+					x.next = blockLen
+					x.eof = true
+					return
+				}
+
 			}(*x, baseBlock, n)
 			if bailOut {
 				break
+			} else {
+				baseBlock += uint64(blocksPerChunk)
+				n += chunkLen
 			}
-			baseBlock += uint64(blocksPerChunk)
-			n += chunkLen
 		}
 		wg.Wait()
 		if debug {
 			fmt.Printf("baseBlock=%d  chunkCount=%d  chunk=%d  ",
 				baseBlock, chunkCount, chunk)
-			fmt.Printf("n=%d   eof=%v\n", n, eof)
+			fmt.Printf("n=%d  eof=%v\n", n, eof)
 		}
+		x.Seek(baseBlock)
 		x.next = blockLen
 		idx = x.next
 		x.eof = eof
-		x.Seek(baseBlock)
 		if eof {
 			return n, io.EOF
 		}
 	}
 	if debug || debugOutline {
-		fmt.Printf("finished block processing; n=%d\n", n)
+		fmt.Printf("finished chunk processing; n=%d\n", n)
 	}
 
-	// ======= finish up any m bytes left over from block processing, including
-	// any remainder bytes for block processing =======
+	// ======= finish up all m bytes left over after chunk processing  =======
 	for ; n < size; n++ {
 		if idx >= blockLen {
 			if x.eof {
@@ -496,10 +500,6 @@ func (x *ChaCha20_ctx) Encrypt(m, c []byte) (n int, err error) {
 			x.input[12]++
 			if x.input[12] == 0 {
 				x.input[13]++
-				/* stopping at 2^70 bytes per nonce is user's responsibility */
-				/* At 1 ns/block: 584+ years to exhaust the key stream.
-				 * (2^70 bytes)/(64 bytes/ns)    RonC
-				 */
 				if x.input[13] == 0 {
 					x.eof = true
 				}
@@ -512,7 +512,7 @@ func (x *ChaCha20_ctx) Encrypt(m, c []byte) (n int, err error) {
 	x.next = idx
 
 	if debug || debugOutline {
-		fmt.Printf("finished post-block processing; n=%d\n", n)
+		fmt.Printf("finished post-chunk processing; n=%d\n", n)
 	}
 	if x.eof && idx >= blockLen {
 		err = io.EOF

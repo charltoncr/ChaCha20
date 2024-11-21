@@ -1,6 +1,8 @@
 // chacha20_test.go - test ChaCha20 implementation.
 // By Ron Charlton, public domain, 2022-08-28.
-// $Id: chacha20_test.go,v 1.127 2024-11-20 12:35:15-05 ron Exp $
+// $Id: chacha20_test.go,v 1.130 2024-11-21 09:59:20-05 ron Exp $
+//
+// Requires randIn.dat and randOut.dat files to run to completion.
 
 package chacha20
 
@@ -202,6 +204,28 @@ func TestChaCha20(t *testing.T) {
 		ctx.Read(got[:1])
 	}()
 
+	// Test Read with chunk processing for io.EOF when keystream is exhausted,
+	// then test for panic.
+	bc := 500
+	got = make([]byte, blockLen*(bc+1))
+	ctx.Seek(0xffffffffffffffff - 50)
+	n, err = ctx.Read(got)
+	if err != io.EOF {
+		t.Errorf("chunking EOF test: got %v want %v", err, io.EOF)
+	}
+	if n != blockLen*50 {
+		t.Errorf("chunking Read() return length at EOF:\ngot %d, want %d",
+			n, blockLen*50)
+	}
+	func() {
+		defer func() {
+			if r := recover(); r == nil {
+				t.Errorf("chunking ChaCha20 did not panic for Read after EOF")
+			}
+		}()
+		ctx.Read(got[:1])
+	}()
+
 	// Seek to block 0 should yield same result with XORKeyStream
 	ctx.Seek(0)
 	got = make([]byte, len(want))
@@ -310,13 +334,6 @@ func BenchmarkChaCha_Read(b *testing.B) {
 			b.Fatalf("Read failed: n=%d, err=%v", n, err)
 		}
 	}
-}
-
-func BenchmarkChaCha_readOnce(b *testing.B) {
-	ctx.SetRounds(20)
-	ctx.Seek(0)
-	b.ResetTimer()
-	ctx.Read(m5e6)
 }
 
 // This is the test used by skeeto's chacha-go implementation on GitHub.
