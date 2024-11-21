@@ -50,7 +50,7 @@
 // https://github.com/skeeto/chacha-go.  That implementation is vastly slower
 // than this implementation.
 //
-// $Id: chacha20.go,v 5.0.1.30 2024-11-20 14:48:14-05 ron Exp $
+// $Id: chacha20.go,v 6.1 2024-11-20 15:05:48-05 ron Exp $
 ////
 
 // Package chacha20 provides public domain ChaCha20 encryption and decryption.
