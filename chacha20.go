@@ -8,9 +8,11 @@
 // <https://cr.yp.to/chacha.html> to produce a prototype chacha20.go file,
 // then hand- and sed-edited it to make true Go source code.  I added
 // New, Seek, XORKeyStream, Read and SetRounds, and made the default number of
-// rounds 20.  Much later I parallelized the Encrypt method that all other
-// methods depend on, it resulted in 10X the performance for large input data
-// on a 12-processor M2 Mac Studio.
+// rounds 20.
+//
+// Much later I parallelized the Encrypt method that all other methods
+// depend on.  It resulted in 10X the speed for large input data
+// on a 12-processor M2 Max Mac Studio.
 //
 // From the C file (chacha[-ref].c (at https://cr.yp.to/chacha.html):
 //		chacha-ref.c version 20080118
@@ -36,7 +38,7 @@
 //		ctx.Encrypt(b, b)
 //		err = os.WriteFile("myfile.encrypted", b, 0644)
 //
-// chacha20.go v6.1 Encrypt on 3.504 GHz M2 Mac Studio with 5,000,000-byte
+// chacha20.go v6.7 Encrypt on 3.504 GHz M2 Mac Studio with 5,000,000-byte
 // message, and 500 blocks-per-chunk parallel processing (go test -bench=.)
 // (also true with v5.0.1.30):
 //
@@ -50,7 +52,7 @@
 // https://github.com/skeeto/chacha-go.  That implementation is vastly slower
 // than this implementation.
 //
-// $Id: chacha20.go,v 6.7 2024-11-21 10:04:09-05 ron Exp $
+// $Id: chacha20.go,v 6.18 2024-11-27 07:33:00-05 ron Exp $
 ////
 
 // Package chacha20 provides public domain ChaCha20 encryption and decryption.
@@ -72,6 +74,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"math"
 	"sync"
 )
 
@@ -263,15 +266,6 @@ type ChaCha20_ctx struct {
 // ChaCha block length in bytes
 const blockLen int = 64
 
-// Seek moves x directly to 64-byte block number n in constant time.
-// Seek(0) sets x back to its initial state.
-func (x *ChaCha20_ctx) getCounter() (n uint64) {
-	var b [8]byte
-	binary.LittleEndian.PutUint32(b[0:], x.input[12])
-	binary.LittleEndian.PutUint32(b[4:], x.input[13])
-	return binary.LittleEndian.Uint64(b[:])
-}
-
 // New allocates a new ChaCha20 context and sets it up
 // with the caller's key and iv.  The default number of rounds is 20.
 func New(key, iv []byte) (ctx *ChaCha20_ctx) {
@@ -334,16 +328,25 @@ func (x *ChaCha20_ctx) KeySetup(key []byte) {
 }
 
 // IvSetup sets initialization vector iv as a nonce for ChaCha20 context x.
-// It also does the equivalent of Seek(0).
+// It also calls Seek(0).
 // IvSetup panics if len(iv) is not 8.
 func (x *ChaCha20_ctx) IvSetup(iv []byte) {
 	if len(iv) != 8 {
 		panic("chacha20: invalid iv length; must be 8.")
 	}
-	x.input[12] = 0
-	x.input[13] = 0
+	x.Seek(0)
 	x.input[14] = binary.LittleEndian.Uint32(iv[0:])
 	x.input[15] = binary.LittleEndian.Uint32(iv[4:])
+}
+
+// IvSetupUint64 sets x's initialization vector (nonce) to the value in n.
+// It also calls Seek(0).
+func (x *ChaCha20_ctx) IvSetupUint64(n uint64) {
+	var b [8]byte
+	x.Seek(0)
+	binary.LittleEndian.PutUint64(b[:], n)
+	x.input[14] = binary.LittleEndian.Uint32(b[0:])
+	x.input[15] = binary.LittleEndian.Uint32(b[4:])
 }
 
 // Seek moves x directly to 64-byte block number n in constant time.
@@ -357,11 +360,19 @@ func (x *ChaCha20_ctx) Seek(n uint64) {
 	x.next = blockLen
 }
 
+// GetCounter returns x's block counter value.
+func (x *ChaCha20_ctx) GetCounter() (n uint64) {
+	var b [8]byte
+	binary.LittleEndian.PutUint32(b[0:], x.input[12])
+	binary.LittleEndian.PutUint32(b[4:], x.input[13])
+	return binary.LittleEndian.Uint64(b[:])
+}
+
 // Encrypt puts ciphertext into c given plaintext m.  Any length is allowed
 // for m.  Parameters m and c must overlap completely or not at all.
 // Encrypt panics if len(c) is less than len(m).  len(c) can be larger than
-// len(m).  The message to be encrypted
-// can be processed in sequential segments with multiple calls to Encrypt.
+// len(m).  The message to be encrypted can be processed
+// in sequential segments with multiple calls to Encrypt.
 //
 // Encrypt returns io.EOF when the key stream is exhausted
 // after producing 1.2 zettabytes.  It will panic if called with the
@@ -372,7 +383,7 @@ func (x *ChaCha20_ctx) Seek(n uint64) {
 func (x *ChaCha20_ctx) Encrypt(m, c []byte) (n int, err error) {
 	size := len(m)
 	if size == 0 {
-		return 0, nil
+		return
 	}
 	if len(c) < size {
 		panic("chacha20.Encrypt: insufficient space; c is shorter than m.")
@@ -382,8 +393,8 @@ func (x *ChaCha20_ctx) Encrypt(m, c []byte) (n int, err error) {
 		panic("chacha20.Encrypt: key stream is exhausted")
 	}
 
-	// ==== Take care of any x.next values left over from earlier Encrypt calls
-	// by aligning n with 64-byte blocks (idx == blockLen). ====
+	// ====== Take care of any x.next values left over from earlier Encrypt
+	// calls by aligning n with 64-byte blocks (idx == blockLen). ======
 	for ; n < size && idx < blockLen; n++ {
 		if idx >= blockLen {
 			if x.eof {
@@ -393,10 +404,6 @@ func (x *ChaCha20_ctx) Encrypt(m, c []byte) (n int, err error) {
 			x.input[12]++
 			if x.input[12] == 0 {
 				x.input[13]++
-				/* stopping at 2^70 bytes per nonce is user's responsibility */
-				/* At 1 ns/block: 584+ years to exhaust the key stream.
-				 * (2^70 bytes)/(64 bytes/ns)    RonC
-				 */
 				if x.input[13] == 0 {
 					x.eof = true
 				}
@@ -415,22 +422,25 @@ func (x *ChaCha20_ctx) Encrypt(m, c []byte) (n int, err error) {
 		return
 	}
 
-	// === Chunk-process in goroutines if possible. Use multi-block chunks.
-	// Messages longer than 32,000 bytes will be chunk-processed. ===
+	// ==== Chunk-process with goroutines if possible. Use multi-block chunks.
+	// Messages longer than about 32,000 bytes will be chunk-processed. ====
+	// idx==blockLen must be true at this point.
 	blocksPerChunk := 500
 	chunkLen := blockLen * blocksPerChunk
 	if size-n > chunkLen {
+		eof := x.eof
 		wg := sync.WaitGroup{}
-		baseBlock := x.getCounter()
-		chunkCount := uint64((size - n) / chunkLen)
+		baseBlock := x.GetCounter()
+		chunkCount := uint64((size - n) / chunkLen) // how many chunks to proc.
+		maxChunk := math.MaxUint64 - baseBlock
+		chunkCount = min(maxChunk, chunkCount)
 		if debug {
 			remainder := (size - n) - chunkLen*int(chunkCount)
 			fmt.Printf("remainder=%d  chunkCount=%d\n", remainder, chunkCount)
 		}
-		eof := x.eof
+		nTop := 0
 		var chunk uint64
 		for chunk = 0; chunk < chunkCount; chunk++ {
-			bailOut := false
 			wg.Add(1)
 			go func(r1 ChaCha20_ctx, blk uint64, ni int) {
 				defer wg.Done()
@@ -438,10 +448,9 @@ func (x *ChaCha20_ctx) Encrypt(m, c []byte) (n int, err error) {
 				r.Seek(blk)
 				blockStop := blk + uint64(blocksPerChunk)
 				if blockStop < blk {
-					// would overflow before bk reaches blockStop
-					eof = true
-					bailOut = true
 					blockStop = 0xffffffffffffffff
+					eof = true
+					nTop = ni
 				}
 				for bk := blk; bk < blockStop; bk++ {
 					salsa20_wordtobyte(r.input[:], r.rounds, r.output[:])
@@ -454,25 +463,14 @@ func (x *ChaCha20_ctx) Encrypt(m, c []byte) (n int, err error) {
 						ni++
 					}
 				}
-				if bailOut {
-					n = ni
-					if debug {
-						fmt.Printf("chunking bailOut\n")
-					}
-					x.next = blockLen
-					x.eof = true
-					return
-				}
-
 			}(*x, baseBlock, n)
-			if bailOut {
-				break
-			} else {
-				baseBlock += uint64(blocksPerChunk)
-				n += chunkLen
-			}
+			baseBlock += uint64(blocksPerChunk)
+			n += chunkLen
 		}
 		wg.Wait()
+		if nTop > 0 {
+			n = nTop
+		}
 		if debug {
 			fmt.Printf("baseBlock=%d  chunkCount=%d  chunk=%d  ",
 				baseBlock, chunkCount, chunk)
@@ -490,7 +488,7 @@ func (x *ChaCha20_ctx) Encrypt(m, c []byte) (n int, err error) {
 		fmt.Printf("finished chunk processing; n=%d\n", n)
 	}
 
-	// ======= finish up all m bytes left over after chunk processing  =======
+	// ======= finish up all bytes left over after chunk processing  =======
 	for ; n < size; n++ {
 		if idx >= blockLen {
 			if x.eof {
@@ -523,8 +521,8 @@ func (x *ChaCha20_ctx) Encrypt(m, c []byte) (n int, err error) {
 // Decrypt puts plaintext into m given ciphertext c.  Any length is allowed
 // for c.  Parameters m and c must overlap completely or not at all.
 // Decrypt panics if len(m) is less than len(c).  len(m) can be larger than
-// len(c).  The message to be decrypted
-// can be processed in sequential segments with multiple calls to Decrypt.
+// len(c).  The message to be decrypted can be processed in
+// sequential segments with multiple calls to Decrypt.
 //
 // Decrypt returns io.EOF when the key stream is exhausted
 // after producing 1.2 zettabytes.  It will panic if called with the
@@ -564,7 +562,7 @@ func (x *ChaCha20_ctx) Keystream(stream []byte) {
 // in dst.  XORKeyStream panics if len(dst) is less than len(src), or
 // when the ChaCha key stream is exhausted after producing 1.2 zettabytes.
 func (x *ChaCha20_ctx) XORKeyStream(dst, src []byte) {
-	if x.eof {
+	if x.eof && len(src) >= blockLen {
 		panic("chacha20.XORKeyStream: key stream is exhausted")
 	}
 	if len(dst) < len(src) {
@@ -580,7 +578,7 @@ func (x *ChaCha20_ctx) XORKeyStream(dst, src []byte) {
 // zettabytes.  It will panic if called with the
 // the same x after io.EOF is returned, unless x is re-initialized.
 func (x *ChaCha20_ctx) Read(b []byte) (int, error) {
-	if x.eof {
+	if x.eof && len(b) >= blockLen {
 		panic("chacha20.Read: key stream is exhausted")
 	}
 	for i := 0; i < len(b); i++ {
