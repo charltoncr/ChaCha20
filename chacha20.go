@@ -38,9 +38,9 @@
 //		ctx.Encrypt(b, b)
 //		err = os.WriteFile("myfile.encrypted", b, 0644)
 //
-// chacha20.go v6.7 Encrypt on 3.504 GHz M2 Mac Studio with 5,000,000-byte
-// message, and 500 blocks-per-chunk parallel processing (go test -bench=.)
-// (also true with v5.0.1.30):
+// chacha20.go v6.18 Encrypt on 3.504 GHz M2 Mac Studio w/12 processors,
+// 5,000,000-byte message, and 500 blocks-per-chunk parallel
+// processing (go test -bench=.) (also true with v5.0.1.30):
 //
 //	 Rounds	 	 GB/s   ns/block
 //	 ------		 -----   --------
@@ -52,7 +52,7 @@
 // https://github.com/skeeto/chacha-go.  That implementation is vastly slower
 // than this implementation.
 //
-// $Id: chacha20.go,v 6.18 2024-11-27 07:33:00-05 ron Exp $
+// $Id: chacha20.go,v 6.20 2024-11-27 08:31:30-05 ron Exp $
 ////
 
 // Package chacha20 provides public domain ChaCha20 encryption and decryption.
@@ -448,6 +448,7 @@ func (x *ChaCha20_ctx) Encrypt(m, c []byte) (n int, err error) {
 				r.Seek(blk)
 				blockStop := blk + uint64(blocksPerChunk)
 				if blockStop < blk {
+					// would overflow
 					blockStop = 0xffffffffffffffff
 					eof = true
 					nTop = ni

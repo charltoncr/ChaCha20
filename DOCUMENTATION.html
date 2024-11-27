@@ -72,10 +72,25 @@ to encrypt a message must be used to decrypt the message.</p>
 <h2>func</h2>
 
 <p><code>go
+func (x *ChaCha20_ctx) GetCounter() (n uint64)
+</code>
+GetCounter returns x's block counter value.</p>
+
+<h2>func</h2>
+
+<p><code>go
 func (x *ChaCha20_ctx) IvSetup(iv []byte)
 </code>
 IvSetup sets initialization vector iv as a nonce for ChaCha20 context x.
-It also does the equivalent of Seek(0). IvSetup panics if len(iv) is not 8.</p>
+It also calls Seek(0). IvSetup panics if len(iv) is not 8.</p>
+
+<h2>func</h2>
+
+<p><code>go
+func (x *ChaCha20_ctx) IvSetupUint64(n uint64)
+</code>
+IvSetupUint64 sets x's initialization vector (nonce) to the value in n.
+It also calls Seek(0).</p>
 
 <h2>func</h2>
 

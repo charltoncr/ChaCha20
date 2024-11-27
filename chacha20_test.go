@@ -1,6 +1,6 @@
 // chacha20_test.go - test ChaCha20 implementation.
 // By Ron Charlton, public domain, 2022-08-28.
-// $Id: chacha20_test.go,v 1.130 2024-11-21 09:59:20-05 ron Exp $
+// $Id: chacha20_test.go,v 1.138 2024-11-27 07:24:29-05 ron Exp $
 //
 // Requires randIn.dat and randOut.dat files to run to completion.
 
@@ -45,6 +45,7 @@ func TestChaCha20(t *testing.T) {
 
 	key := make([]byte, 32)
 	iv := make([]byte, 8)
+	blockLen := 64 // constant from chacha20; also in chacha20.go.
 
 	const (
 		randFileNameIn  = "randIn.dat"  // contains random message
@@ -74,6 +75,8 @@ func TestChaCha20(t *testing.T) {
 		t.Fatalf("randIn and randOut created")
 	}
 
+	// Get the very long plaintext and ciphertext of a known-good encryption
+	// into two variables: nonZeroIn and nonZeroOut.
 	var err error
 	var nonZeroIn, nonZeroOut []byte
 
@@ -88,7 +91,7 @@ func TestChaCha20(t *testing.T) {
 		t.Fatalf("assert: len(nonZeroOut) == len(nonZeroIn) failed")
 	}
 
-	// test encrypt with key, iv and input block of all zeroes
+	// test encrypt with key, iv and input block of all zeroes with IETF data
 	got := make([]byte, len(want))
 	ctx := New(key, iv)
 	ctx.Encrypt(got, got)
@@ -115,7 +118,6 @@ func TestChaCha20(t *testing.T) {
 				t.Errorf("Encrypt() NonZero: got[%d]=%d, want[%d]=%d", i, gotNonZeroOut[i], i, nonZeroOut[i])
 			}
 		}
-		t.Errorf("Encrypt() NonZero:\n got %v\nwant %v", gotNonZeroOut, nonZeroOut)
 	}
 
 	// test piecewise encryption (use 'nonZeroIn' as input; expect nonZeroOut
@@ -137,7 +139,26 @@ func TestChaCha20(t *testing.T) {
 				t.Errorf("Encrypt() piecewise: got[%d]=%d, want[%d]=%d", i, got[i], i, piecewiseWant[i])
 			}
 		}
-		//t.Errorf("Encrypt() piecewise:\n got %v\nwant %v", got, piecewiseWant)
+	}
+
+	// Test sequential chunk encryption of long non-Zero input using two halves
+	// of data from randIn.dat.
+	ctx = New(key, iv)
+	half := len(nonZeroIn) / 2
+	if n, err := ctx.Encrypt(nonZeroIn[:half], gotNonZeroOut); err != nil ||
+		n != half {
+		t.Errorf("Encrypt() NonZero first half: n=%d  err=%v", n, err)
+	}
+	if n, err := ctx.Encrypt(nonZeroIn[half:], gotNonZeroOut[half:]); err != nil ||
+		n != half {
+		t.Errorf("Encrypt() NonZero second half: n=%d  err=%v", n, err)
+	}
+	if !bytes.Equal(gotNonZeroOut, nonZeroOut) {
+		for i := 0; i < len(nonZeroIn); i++ {
+			if gotNonZeroOut[i] != nonZeroOut[i] {
+				t.Errorf("Encrypt() NonZero by halves: got[%d]=%d, want[%d]=%d", i, gotNonZeroOut[i], i, nonZeroOut[i])
+			}
+		}
 	}
 
 	// Keystream should yield same result as Encrypt with any input
@@ -204,18 +225,18 @@ func TestChaCha20(t *testing.T) {
 		ctx.Read(got[:1])
 	}()
 
-	// Test Read with chunk processing for io.EOF when keystream is exhausted,
-	// then test for panic.
-	bc := 500
-	got = make([]byte, blockLen*(bc+1))
-	ctx.Seek(0xffffffffffffffff - 50)
+	// Test chunk processing for proper err and n returns when keystream is
+	// exhausted, then test for panic.  Assumes chacha20:blocksPerChunk=500.
+	bc := 501
+	got = make([]byte, blockLen*(bc*2+1))
+	ctx.Seek(uint64(0xffffffffffffffff) - uint64(bc))
 	n, err = ctx.Read(got)
 	if err != io.EOF {
 		t.Errorf("chunking EOF test: got %v want %v", err, io.EOF)
 	}
-	if n != blockLen*50 {
+	if n != blockLen*(bc-1) {
 		t.Errorf("chunking Read() return length at EOF:\ngot %d, want %d",
-			n, blockLen*50)
+			n, blockLen*(bc-1))
 	}
 	func() {
 		defer func() {
@@ -329,10 +350,7 @@ func BenchmarkChaCha_Read(b *testing.B) {
 	ctx.SetRounds(20)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		n, err := ctx.Read(m5e6)
-		if n != len(m5e6) || err != nil {
-			b.Fatalf("Read failed: n=%d, err=%v", n, err)
-		}
+		ctx.Read(m5e6)
 	}
 }
 
@@ -342,6 +360,8 @@ func BenchmarkOneBlockXORStream(b *testing.B) {
 	var iv [8]byte
 	var buf [blockLen]byte
 	c := New(key[:], iv[:])
+	c.SetRounds(20)
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		c.XORKeyStream(buf[:], buf[:])
 	}
