@@ -40,7 +40,7 @@
 //
 // chacha20.go v6.18 Encrypt on 3.504 GHz M2 Mac Studio w/12 processors,
 // 5,000,000-byte message, and 500 blocks-per-chunk parallel
-// processing (go test -bench=.) (also true with v5.0.1.30):
+// processing (go test -bench=.):
 //
 //	 Rounds	 	 GB/s   ns/block
 //	 ------		 -----   --------
@@ -52,7 +52,7 @@
 // https://github.com/skeeto/chacha-go.  That implementation is vastly slower
 // than this implementation.
 //
-// $Id: chacha20.go,v 6.20 2024-11-27 08:31:30-05 ron Exp $
+// $Id: chacha20.go,v 6.25 2024-11-30 14:41:27-05 ron Exp $
 ////
 
 // Package chacha20 provides public domain ChaCha20 encryption and decryption.
@@ -252,6 +252,9 @@ func salsa20_wordtobyte(input []uint32, rounds int, output []byte) {
 	binary.LittleEndian.PutUint32(output[4*15:], p)
 }
 
+// ChaCha block length in bytes
+const blockLen int = 64
+
 // ChaCha20_ctx contains state information for a ChaCha20 context.
 // ChaCha20_ctx implements the io.Reader and the crypto/cipher.Stream
 // interfaces.
@@ -262,9 +265,6 @@ type ChaCha20_ctx struct {
 	eof    bool
 	rounds int
 }
-
-// ChaCha block length in bytes
-const blockLen int = 64
 
 // New allocates a new ChaCha20 context and sets it up
 // with the caller's key and iv.  The default number of rounds is 20.
@@ -280,7 +280,7 @@ func New(key, iv []byte) (ctx *ChaCha20_ctx) {
 
 // SetRounds sets the number of rounds used by Encrypt, Decrypt, Read,
 // XORKeyStream and Keystream for a ChaCha20 context.
-// The valid values for r are 8, 12 and 20.
+// The valid values for r: 8, 12 and 20.
 // SetRounds panics with any other value.  ChaCha20's default number
 // of rounds is 20.  Smaller r values are likely less secure but are faster.
 // ChaCha8 requires 8 rounds, ChaCha12 requires 12 and ChaCha20 requires 20.
@@ -436,7 +436,8 @@ func (x *ChaCha20_ctx) Encrypt(m, c []byte) (n int, err error) {
 		chunkCount = min(maxChunk, chunkCount)
 		if debug {
 			remainder := (size - n) - chunkLen*int(chunkCount)
-			fmt.Printf("remainder=%d  chunkCount=%d\n", remainder, chunkCount)
+			fmt.Printf("remainder=%d  chunkCount=%d  maxChunk=%d\n",
+				remainder, chunkCount, maxChunk)
 		}
 		nTop := 0
 		var chunk uint64
@@ -448,7 +449,7 @@ func (x *ChaCha20_ctx) Encrypt(m, c []byte) (n int, err error) {
 				r.Seek(blk)
 				blockStop := blk + uint64(blocksPerChunk)
 				if blockStop < blk {
-					// would overflow
+					// overflowed
 					blockStop = 0xffffffffffffffff
 					eof = true
 					nTop = ni

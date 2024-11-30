@@ -1,6 +1,6 @@
 // chacha20_test.go - test ChaCha20 implementation.
 // By Ron Charlton, public domain, 2022-08-28.
-// $Id: chacha20_test.go,v 1.138 2024-11-27 07:24:29-05 ron Exp $
+// $Id: chacha20_test.go,v 1.142 2024-11-29 06:52:33-05 ron Exp $
 //
 // Requires randIn.dat and randOut.dat files to run to completion.
 
@@ -48,31 +48,36 @@ func TestChaCha20(t *testing.T) {
 	blockLen := 64 // constant from chacha20; also in chacha20.go.
 
 	const (
-		randFileNameIn  = "randIn.dat"  // contains random message
-		randFileNameOut = "randOut.dat" // contains encrypted random message
+		randInFileName  = "randIn.dat"  // contains random message
+		randOutFileName = "randOut.dat" // contains encrypted random message
 	)
 
-	// 'if true {' to generate two files: non-zero message and crypttext
-	// 'if false {' to NOT generate two files: non-zero message and crypttext
+	// 'if false {' is for normal testing.
+	// ONLY USE true IF YOU CAN RUN WITH A KNOWN-GOOD Encrypt METHOD, LIKE
+	// chacha20.go v5.0.1.30.
+	// 'if true {' generates two files: non-zero plaintext and its ciphertext
+	// and exits with t.Fatalf on purpose.
 	if false {
 		// Create random non-zero randIn and randOut files for checking
 		// encryption of non-zero input and output.
-		gotRandIn := make([]byte, 300_030) // 2*blockLen) // 300_000 broke it
+		gotRandIn := make([]byte, 300_030) // 4,687.9 blocks)
 		n, err := crand.Read(gotRandIn)
 		if err != nil || n != len(gotRandIn) {
 			t.Fatalf("Error creating randIn: n: %d, err: %v\n", n, err)
 		}
-		err = os.WriteFile(randFileNameIn, gotRandIn, 0644)
+		err = os.WriteFile(randInFileName, gotRandIn, 0644)
 		if err == nil {
 			gotRandOut := make([]byte, len(gotRandIn))
 			ctx := New(key, iv)
 			ctx.Encrypt(gotRandIn, gotRandOut)
-			err = os.WriteFile(randFileNameOut, gotRandOut, 0644)
+			err = os.WriteFile(randOutFileName, gotRandOut, 0644)
 		}
 		if err != nil {
-			t.Fatalf("Error creating randIn or randOut: %v\n", err)
+			t.Fatalf("Error creating %s or %s: %v\n",
+				randInFileName, randOutFileName, err)
 		}
-		t.Fatalf("randIn and randOut created")
+		t.Fatalf("files %s and %s were created",
+			randInFileName, randOutFileName)
 	}
 
 	// Get the very long plaintext and ciphertext of a known-good encryption
@@ -80,12 +85,12 @@ func TestChaCha20(t *testing.T) {
 	var err error
 	var nonZeroIn, nonZeroOut []byte
 
-	nonZeroIn, err = os.ReadFile(randFileNameIn)
+	nonZeroIn, err = os.ReadFile(randInFileName)
 	if err == nil {
-		nonZeroOut, err = os.ReadFile(randFileNameOut)
+		nonZeroOut, err = os.ReadFile(randOutFileName)
 	}
 	if err != nil {
-		t.Fatalf("Error retrieving random file input or output, err=%v", err)
+		t.Fatalf("Error reading random file input or output, err=%v", err)
 	}
 	if len(nonZeroOut) != len(nonZeroIn) {
 		t.Fatalf("assert: len(nonZeroOut) == len(nonZeroIn) failed")
@@ -132,7 +137,6 @@ func TestChaCha20(t *testing.T) {
 	got = append(got, temp[:part1Size]...)
 	ctx.Encrypt(nonZeroIn[part1Size:], temp)
 	got = append(got, temp[:part2Size]...)
-
 	if !bytes.Equal(got, piecewiseWant) {
 		for i := 0; i < len(nonZeroIn); i++ {
 			if got[i] != piecewiseWant[i] {
@@ -144,7 +148,7 @@ func TestChaCha20(t *testing.T) {
 	// Test sequential chunk encryption of long non-Zero input using two halves
 	// of data from randIn.dat.
 	ctx = New(key, iv)
-	half := len(nonZeroIn) / 2
+	half := len(nonZeroIn) / 2 // nonZeroIn must an even length
 	if n, err := ctx.Encrypt(nonZeroIn[:half], gotNonZeroOut); err != nil ||
 		n != half {
 		t.Errorf("Encrypt() NonZero first half: n=%d  err=%v", n, err)
@@ -165,7 +169,6 @@ func TestChaCha20(t *testing.T) {
 	got = make([]byte, 2*blockLen)
 	ctx = New(key, iv)
 	ctx.Keystream(got)
-
 	if !bytes.Equal(got, want) {
 		t.Errorf("Keystream():\n got %v\nwant %v", got, want)
 	}
@@ -173,7 +176,6 @@ func TestChaCha20(t *testing.T) {
 	// Seek to block 0 should yield same result with Keystream
 	ctx.Seek(0)
 	ctx.Keystream(got)
-
 	if !bytes.Equal(got, want) {
 		t.Errorf("Keystream() after Seek(0):\n got %v\nwant %v", got, want)
 	}
@@ -182,7 +184,6 @@ func TestChaCha20(t *testing.T) {
 	ctx.Seek(1)
 	block2 := make([]byte, blockLen)
 	ctx.Keystream(block2)
-
 	if !bytes.Equal(block2, want[blockLen:]) {
 		t.Errorf("Seek(1) wrong endian-ness:\n got %v\nwant %v", block2, want[blockLen:])
 	}
@@ -190,15 +191,12 @@ func TestChaCha20(t *testing.T) {
 	// Test Read
 	ctx.Seek(0)
 	n, err := ctx.Read(got)
-
 	if err != nil {
 		t.Errorf("Read() err:\n got %v\nwant %v", err, nil)
 	}
-
 	if n != len(want) {
 		t.Errorf("Read() n:\n got %d\nwant %d", n, len(want))
 	}
-
 	if !bytes.Equal(got, want) {
 		t.Errorf("Read() after Seek(0):\n got %v\nwant %v", got, want)
 	}
@@ -207,15 +205,12 @@ func TestChaCha20(t *testing.T) {
 	got = make([]byte, blockLen)
 	ctx.Seek(0xffffffffffffffff)
 	n, err = ctx.Read(got)
-
 	if err != io.EOF {
 		t.Errorf("Read() EOF test: got %v want %v", err, io.EOF)
 	}
-
 	if n != blockLen {
 		t.Errorf("Read() return length at EOF: got %d\nwant %d", n, blockLen)
 	}
-
 	func() {
 		defer func() {
 			if r := recover(); r == nil {
@@ -251,7 +246,6 @@ func TestChaCha20(t *testing.T) {
 	ctx.Seek(0)
 	got = make([]byte, len(want))
 	ctx.XORKeyStream(got, got)
-
 	if !bytes.Equal(got, want) {
 		t.Errorf("XORKeyStream() after Seek(0):\n got %v\nwant %v", got, want)
 	}
@@ -270,7 +264,6 @@ func TestChaCha20(t *testing.T) {
 	crand.Read(m)
 	c := make([]byte, len(m))
 	n, err = ctx.Encrypt(m, c)
-
 	if err != nil {
 		t.Errorf("enc/dec (encryption): got %v want %v (n=%d)", err, nil, n)
 	}
@@ -278,7 +271,6 @@ func TestChaCha20(t *testing.T) {
 	ctx = New(key, iv)
 	got = make([]byte, len(c))
 	ctx.Decrypt(c, got)
-
 	if !bytes.Equal(got, m) {
 		for i := 0; i < len(m); i++ {
 			if got[i] != m[i] {
@@ -288,6 +280,14 @@ func TestChaCha20(t *testing.T) {
 		t.Errorf("simple enc+dec - got[:5]: %v; want[:5]: %v", got[:5], m[:5])
 	}
 
+	// Test encrypting a []byte longer than 2^32 (verify use of variable types).
+	// This test took 17 seconds to 'go test -race', but it passed.
+	// With 'go test' it took about 1.2 seconds and passed.
+	/*
+		got = make([]byte, 4.4e9)
+		ctx.Seek(0)
+		ctx.Encrypt(got, got)
+	*/
 	ctx.Seek(0)
 }
 

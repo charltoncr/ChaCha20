@@ -121,10 +121,10 @@ sets x back to its initial state.
 func (x *ChaCha20_ctx) SetRounds(r int)
 ```
 SetRounds sets the number of rounds used by Encrypt, Decrypt, Read,
-XORKeyStream and Keystream for a ChaCha20 context. The valid values for
-r are 8, 12 and 20. SetRounds panics with any other value. ChaCha20's
-default number of rounds is 20. Smaller r values are likely less secure but
-are faster. ChaCha8 requires 8 rounds, ChaCha12 requires 12 and ChaCha20
+XORKeyStream and Keystream for a ChaCha20 context. The valid values for r:
+8, 12 and 20. SetRounds panics with any other value. ChaCha20's default
+number of rounds is 20. Smaller r values are likely less secure but are
+faster. ChaCha8 requires 8 rounds, ChaCha12 requires 12 and ChaCha20
 requires 20.
 
 ## func 
