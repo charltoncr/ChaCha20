@@ -53,7 +53,7 @@
 // https://github.com/skeeto/chacha-go.  That implementation is vastly slower
 // than this implementation for long length plaintext/ciphertext.
 //
-// $Id: chacha20.go,v 6.34 2024-12-02 16:22:23-05 ron Exp $
+// $Id: chacha20.go,v 6.36 2024-12-03 06:18:48-05 ron Exp $
 ////
 
 // Package chacha20 provides public domain ChaCha20 encryption and decryption.
@@ -421,7 +421,6 @@ func (x *ChaCha20_ctx) Encrypt(m, c []byte) (n int, err error) {
 		err = io.EOF
 		return
 	}
-	nPreChunk := n
 
 	// ==== Chunk-process with goroutines if possible. Use multi-block chunks.
 	// Messages longer than about 32,000 bytes will be chunk-processed. ====
@@ -433,61 +432,49 @@ func (x *ChaCha20_ctx) Encrypt(m, c []byte) (n int, err error) {
 		wg := sync.WaitGroup{}
 		baseBlock := x.GetCounter()
 		chunkCount := uint64((size - n) / chunkLen) // how many chunks to proc.
-		maxChunk := 0xffffffffffffffff - baseBlock
-		chunkCount = min(maxChunk, chunkCount)
-		if debug {
-			remainder := (size - n) - chunkLen*int(chunkCount)
-			fmt.Printf("remainder=%d  chunkCount=%d  maxChunk=%d  baseBlock=%d\n",
-				remainder, chunkCount, maxChunk, baseBlock)
-		}
-		nTop := 0
-		var chunk uint64
-		for chunk = 0; chunk < chunkCount; chunk++ {
-			wg.Add(1)
-			go func(r1 ChaCha20_ctx, blk uint64, ni int) {
-				defer wg.Done()
-				r := &r1
-				r.Seek(blk)
-				blockStop := blk + uint64(blocksPerChunk)
-				if blockStop < blk {
-					// overflowed
-					blockStop = 0xffffffffffffffff
-					eof = true
-					if nTop == 0 {
-						nTop = ni
+		if baseBlock+chunkCount*blocksPerChunk > baseBlock {
+			// stream exhaustion  will not occur in chunking code
+			if debug {
+				remainder := (size - n) - chunkLen*int(chunkCount)
+				fmt.Printf("remainder=%d  chunkCount=%d  baseBlock=%d\n",
+					remainder, chunkCount, baseBlock)
+			}
+			var chunk uint64
+			for chunk = 0; chunk < chunkCount; chunk++ {
+				wg.Add(1)
+				go func(r1 ChaCha20_ctx, blk uint64, ni int) {
+					defer wg.Done()
+					r := &r1
+					r.Seek(blk)
+					blockStop := blk + uint64(blocksPerChunk)
+					for bk := blk; bk < blockStop; bk++ {
+						salsa20_wordtobyte(r.input[:], r.rounds, r.output[:])
+						r.input[12]++
+						if r.input[12] == 0 {
+							r.input[13]++
+						}
+						for i := 0; i < blockLen; i++ {
+							c[ni] = m[ni] ^ r.output[i]
+							ni++
+						}
 					}
-				}
-				for bk := blk; bk < blockStop; bk++ {
-					salsa20_wordtobyte(r.input[:], r.rounds, r.output[:])
-					r.input[12]++
-					if r.input[12] == 0 {
-						r.input[13]++
-					}
-					for i := 0; i < blockLen; i++ {
-						c[ni] = m[ni] ^ r.output[i]
-						ni++
-					}
-				}
-			}(*x, baseBlock, n)
-			baseBlock += uint64(blocksPerChunk)
-			n += chunkLen
-		}
-		wg.Wait()
-		if eof {
-			x.eof = true
-			return nPreChunk, io.EOF
-		}
-		if debug {
-			fmt.Printf("baseBlock=%d  chunkCount=%d  chunk=%d  ",
-				baseBlock, chunkCount, chunk)
-			fmt.Printf("n=%d  eof=%v\n", n, eof)
-		}
-		x.Seek(baseBlock)
-		x.next = blockLen
-		idx = x.next
-		x.eof = eof
-		if eof {
-			return n, io.EOF
+				}(*x, baseBlock, n)
+				baseBlock += uint64(blocksPerChunk)
+				n += chunkLen
+			}
+			wg.Wait()
+
+			if debug {
+				fmt.Printf("baseBlock=%d  chunkCount=%d  chunk=%d  ",
+					baseBlock, chunkCount, chunk)
+				fmt.Printf("n=%d  eof=%v\n", n, eof)
+			}
+			x.Seek(baseBlock)
+			x.next = blockLen
+			idx = x.next
+			if eof {
+				return n, io.EOF
+			}
 		}
 	}
 	if debug || debugOutline {

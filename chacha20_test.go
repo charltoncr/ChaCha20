@@ -1,6 +1,6 @@
 // chacha20_test.go - test ChaCha20 implementation.
 // By Ron Charlton, public domain, 2022-08-28.
-// $Id: chacha20_test.go,v 1.146 2024-12-02 16:22:23-05 ron Exp $
+// $Id: chacha20_test.go,v 1.147 2024-12-03 06:18:48-05 ron Exp $
 //
 // Requires randIn.dat and randOut.dat files to run to completion.
 
@@ -222,19 +222,17 @@ func TestChaCha20(t *testing.T) {
 
 	// Test chunk processing for proper err and n returns when keystream is
 	// exhausted, then test for panic.  Assumes chacha20:blocksPerChunk=500.
-	const blocksPerChunk = 500 // MUST MATCH VALUE IN chacha20.go.
-	const extra = 4
+	const blocksPerChunk = 500 // MUST MATCH ITS VALUE IN chacha20.go.
 	bc := blocksPerChunk
 	got = make([]byte, blockLen*(bc*2))
 	ctx.Seek(0 - uint64(bc))
-	ctx.Read(got[:extra])
-	n, err = ctx.Read(got[extra:])
+	n, err = ctx.Read(got)
 	if err != io.EOF {
 		t.Errorf("chunking EOF test: got %v want %v", err, io.EOF)
 	}
-	if n != blockLen-extra {
+	if n != blockLen*bc {
 		t.Errorf("chunking Read() return length at EOF:\ngot %d, want %d",
-			n, blockLen-extra)
+			n, blockLen*bc)
 	}
 	func() {
 		defer func() {
