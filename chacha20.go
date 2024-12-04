@@ -38,22 +38,22 @@
 //		ctx.Encrypt(b, b)
 //		err = os.WriteFile("myfile.encrypted", b, 0644)
 //
-// chacha20.go v6.18 Encrypt on 3.504 GHz M2 Max Mac Studio w/12 processors,
-// 5 MB message, and 500 blocks-per-chunk parallel processing (go test -bench=.):
+// chacha20.go v6.42 Encrypt on 3.504 GHz M2 Max Mac Studio w/12 processors,
+// 5 MB message, and 100 blocks-per-chunk parallel processing (go test -bench=.):
 //
 //	 Rounds	 	 GB/s   ns/block
 //	 ------		 -----   --------
-//	    8		 6.716	   10
-//	   12		 5.634     12
-//	   20		 4.201     15
+//	    8		 6.455	   10
+//	   12		 5.344     12
+//	   20		 4.012     15
 //
-//	 Read: 3.330 GB/s.
+//	 Read: 3.600 GB/s.
 //
 // See an alternate implementation of chacha at
 // https://github.com/skeeto/chacha-go.  That implementation is vastly slower
-// than this implementation for long length plaintext/ciphertext.
+// than this implementation for long length plaintext/ciphertext/keystream.
 //
-// $Id: chacha20.go,v 6.36 2024-12-03 06:18:48-05 ron Exp $
+// $Id: chacha20.go,v 6.43 2024-12-04 12:33:56-05 ron Exp $
 ////
 
 // Package chacha20 provides public domain ChaCha20 encryption and decryption.
@@ -78,12 +78,12 @@ import (
 	"sync"
 )
 
-// true to show all debug messages
-var debug = false
+// change to true to show all debug messages
+const debug = false
 
-// true to show only n after each of pre-block, in block and post-block
-// processing
-var debugOutline = false
+// change to true to show only n after each of pre-chunk, chunk and
+// post-chunk processing
+const debugOutline = false
 
 // Rounds can be 8, 12 or 20.  Lower numbers are likely less secure.
 // Higher numbers consume more compute time.  ChaCha20 requires 20,
@@ -423,30 +423,23 @@ func (x *ChaCha20_ctx) Encrypt(m, c []byte) (n int, err error) {
 	}
 
 	// ==== Chunk-process with goroutines if possible. Use multi-block chunks.
-	// Messages longer than about 32,000 bytes will be chunk-processed. ====
-	// idx==blockLen must be true at this point.
-	const blocksPerChunk = 500
+	// Messages longer than about 6,400 bytes will be chunk-processed
+	// unless x.eof==true would occur during chunking. ====
+	// idx==blockLen must be true here.
+	const blocksPerChunk = 100
 	const chunkLen = blockLen * blocksPerChunk
 	if size-n > chunkLen {
-		eof := x.eof
 		wg := sync.WaitGroup{}
 		baseBlock := x.GetCounter()
 		chunkCount := uint64((size - n) / chunkLen) // how many chunks to proc.
 		if baseBlock+chunkCount*blocksPerChunk > baseBlock {
-			// stream exhaustion  will not occur in chunking code
-			if debug {
-				remainder := (size - n) - chunkLen*int(chunkCount)
-				fmt.Printf("remainder=%d  chunkCount=%d  baseBlock=%d\n",
-					remainder, chunkCount, baseBlock)
-			}
-			var chunk uint64
-			for chunk = 0; chunk < chunkCount; chunk++ {
+			// no keystream exhaustion (io.EOF) in chunk processing
+			for chunk := uint64(0); chunk < chunkCount; chunk++ {
 				wg.Add(1)
-				go func(r1 ChaCha20_ctx, blk uint64, ni int) {
+				go func(r ChaCha20_ctx, blk uint64, ni int) {
 					defer wg.Done()
-					r := &r1
 					r.Seek(blk)
-					blockStop := blk + uint64(blocksPerChunk)
+					blockStop := blk + blocksPerChunk
 					for bk := blk; bk < blockStop; bk++ {
 						salsa20_wordtobyte(r.input[:], r.rounds, r.output[:])
 						r.input[12]++
@@ -459,22 +452,17 @@ func (x *ChaCha20_ctx) Encrypt(m, c []byte) (n int, err error) {
 						}
 					}
 				}(*x, baseBlock, n)
-				baseBlock += uint64(blocksPerChunk)
+				baseBlock += blocksPerChunk
 				n += chunkLen
 			}
 			wg.Wait()
-
 			if debug {
-				fmt.Printf("baseBlock=%d  chunkCount=%d  chunk=%d  ",
-					baseBlock, chunkCount, chunk)
-				fmt.Printf("n=%d  eof=%v\n", n, eof)
+				fmt.Printf("baseBlock=%d  chunkCount=%d  n=%d\n",
+					baseBlock, chunkCount, n)
 			}
 			x.Seek(baseBlock)
 			x.next = blockLen
-			idx = x.next
-			if eof {
-				return n, io.EOF
-			}
+			idx = blockLen
 		}
 	}
 	if debug || debugOutline {
@@ -540,7 +528,7 @@ func (x *ChaCha20_ctx) Keystream(stream []byte) {
 	if x.eof {
 		panic("chacha20.Keystream: key stream is exhausted")
 	}
-	t := make([]byte, len(stream)) // 3X faster than zeroing b first
+	t := make([]byte, len(stream)) // 3X faster than zeroing stream first
 	x.Encrypt(t, stream)
 }
 
@@ -569,7 +557,7 @@ func (x *ChaCha20_ctx) XORKeyStream(dst, src []byte) {
 // zettabytes.  It will panic if called with the
 // the same x after io.EOF is returned, unless x is re-initialized.
 func (x *ChaCha20_ctx) Read(b []byte) (int, error) {
-	if x.eof && len(b) >= blockLen {
+	if x.eof {
 		panic("chacha20.Read: key stream is exhausted")
 	}
 	t := make([]byte, len(b)) // 3X faster than zeroing b first
