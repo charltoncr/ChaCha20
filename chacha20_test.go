@@ -48,8 +48,8 @@ func TestChaCha20(t *testing.T) {
 	blockLen := 64 // constant from chacha20; also in chacha20.go.
 
 	const (
-		randInFileName  = "randIn.dat"  // random message
-		randOutFileName = "randOut.dat" // encrypted random message
+		randInFileName  = "testdata/randIn.dat"  // random message
+		randOutFileName = "testdata/randOut.dat" // encrypted random message
 	)
 
 	// 'if false {' is for normal testing.
