@@ -1,6 +1,6 @@
 // chacha20_test.go - test ChaCha20 implementation.
 // By Ron Charlton, public domain, 2022-08-28.
-// $Id: chacha20_test.go,v 1.147 2024-12-03 06:18:48-05 ron Exp $
+// $Id: chacha20_test.go,v 1.153 2024-12-10 06:36:00-05 ron Exp $
 //
 // Requires randIn.dat and randOut.dat files to run to completion.
 
@@ -48,8 +48,8 @@ func TestChaCha20(t *testing.T) {
 	blockLen := 64 // constant from chacha20; also in chacha20.go.
 
 	const (
-		randInFileName  = "randIn.dat"  // contains random message
-		randOutFileName = "randOut.dat" // contains encrypted random message
+		randInFileName  = "testdata/randIn.dat"  // random message
+		randOutFileName = "testdata/randOut.dat" // encrypted random message
 	)
 
 	// 'if false {' is for normal testing.
@@ -221,18 +221,19 @@ func TestChaCha20(t *testing.T) {
 	}()
 
 	// Test chunk processing for proper err and n returns when keystream is
-	// exhausted, then test for panic.  Assumes chacha20:blocksPerChunk=500.
-	const blocksPerChunk = 500 // MUST MATCH ITS VALUE IN chacha20.go.
+	// exhausted, then test for panic.  Assumes chacha20:blocksPerChunk=100.
+	const blocksPerChunk = 100 // MUST MATCH ITS VALUE IN chacha20.go.
 	bc := blocksPerChunk
-	got = make([]byte, blockLen*(bc*2))
-	ctx.Seek(0 - uint64(bc))
+	bcOffset := 1 // I tested with -2, -1, 0, 1, 2.
+	got = make([]byte, blockLen*(bc+bcOffset))
+	ctx.Seek(0 - uint64(bc+bcOffset))
 	n, err = ctx.Read(got)
 	if err != io.EOF {
 		t.Errorf("chunking EOF test: got %v want %v", err, io.EOF)
 	}
-	if n != blockLen*bc {
+	if n != blockLen*(bc+bcOffset) {
 		t.Errorf("chunking Read() return length at EOF:\ngot %d, want %d",
-			n, blockLen*bc)
+			n, blockLen*(bc+bcOffset))
 	}
 	func() {
 		defer func() {

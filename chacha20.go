@@ -7,8 +7,8 @@
 // I used clang -E to pre-process chacha[-ref].c from
 // <https://cr.yp.to/chacha.html> to produce a prototype chacha20.go file,
 // then hand- and sed-edited it to make true Go source code.  I added
-// New, Seek, XORKeyStream, Read and SetRounds, and made the default number of
-// rounds 20.
+// New, Seek, XORKeyStream, Read, SetRounds, IvSetupUint64,
+// and made the default number of rounds 20.
 //
 // Much later I parallelized the Encrypt method that all other methods
 // depend on.  It resulted in 10X the speed for large input data
@@ -53,7 +53,7 @@
 // https://github.com/skeeto/chacha-go.  That implementation is vastly slower
 // than this implementation for long length plaintext/ciphertext/keystream.
 //
-// $Id: chacha20.go,v 6.43 2024-12-04 12:33:56-05 ron Exp $
+// $Id: chacha20.go,v 6.46 2024-12-06 15:59:10-05 ron Exp $
 ////
 
 // Package chacha20 provides public domain ChaCha20 encryption and decryption.
@@ -422,7 +422,7 @@ func (x *ChaCha20_ctx) Encrypt(m, c []byte) (n int, err error) {
 		return
 	}
 
-	// ==== Chunk-process with goroutines if possible. Use multi-block chunks.
+	// ==== Chunk-process with goroutines if possible. One chunk per goroutine.
 	// Messages longer than about 6,400 bytes will be chunk-processed
 	// unless x.eof==true would occur during chunking. ====
 	// idx==blockLen must be true here.
@@ -433,14 +433,13 @@ func (x *ChaCha20_ctx) Encrypt(m, c []byte) (n int, err error) {
 		baseBlock := x.GetCounter()
 		chunkCount := uint64((size - n) / chunkLen) // how many chunks to proc.
 		if baseBlock+chunkCount*blocksPerChunk > baseBlock {
-			// no keystream exhaustion (io.EOF) in chunk processing
+			// keystream exhaustion (io.EOF) won't occur in chunk processing
 			for chunk := uint64(0); chunk < chunkCount; chunk++ {
 				wg.Add(1)
 				go func(r ChaCha20_ctx, blk uint64, ni int) {
 					defer wg.Done()
 					r.Seek(blk)
-					blockStop := blk + blocksPerChunk
-					for bk := blk; bk < blockStop; bk++ {
+					for j := 0; j < blocksPerChunk; j++ {
 						salsa20_wordtobyte(r.input[:], r.rounds, r.output[:])
 						r.input[12]++
 						if r.input[12] == 0 {
