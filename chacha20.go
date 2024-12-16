@@ -41,19 +41,19 @@
 // chacha20.go v6.42 Encrypt on 3.504 GHz M2 Max Mac Studio w/12 processors,
 // 5 MB message, and 100 blocks-per-chunk parallel processing (go test -bench=.):
 //
-//	 Rounds	 	 GB/s   ns/block
-//	 ------		 -----   --------
-//	    8		 6.455	   10
-//	   12		 5.344     12
-//	   20		 4.012     15
+//	 Rounds	 GB/s  ns/block
+//	 ------	 ----  --------
+//	    8	 6.45     10
+//	   12	 5.34     12
+//	   20	 4.01     15
 //
-//	 Read: 3.600 GB/s.
+//	 Read: 3.6 GB/s.
 //
 // See an alternate implementation of chacha at
 // https://github.com/skeeto/chacha-go.  That implementation is vastly slower
 // than this implementation for long length plaintext/ciphertext/keystream.
 //
-// $Id: chacha20.go,v 6.46 2024-12-06 15:59:10-05 ron Exp $
+// $Id: chacha20.go,v 6.51 2024-12-16 06:14:09-05 ron Exp $
 ////
 
 // Package chacha20 provides public domain ChaCha20 encryption and decryption.
@@ -390,10 +390,10 @@ func (x *ChaCha20_ctx) Encrypt(m, c []byte) (n int, err error) {
 	}
 	idx := x.next
 	if x.eof && idx >= blockLen {
-		panic("chacha20.Encrypt: key stream is exhausted")
+		panic("chacha20: key stream is exhausted")
 	}
 
-	// ====== Take care of any x.next values left over from earlier Encrypt
+	// ====== Process any x.next values left over from earlier Encrypt
 	// calls by aligning n with 64-byte blocks (idx == blockLen). ======
 	for ; n < size && idx < blockLen; n++ {
 		if idx >= blockLen {
@@ -426,14 +426,14 @@ func (x *ChaCha20_ctx) Encrypt(m, c []byte) (n int, err error) {
 	// Messages longer than about 6,400 bytes will be chunk-processed
 	// unless x.eof==true would occur during chunking. ====
 	// idx==blockLen must be true here.
-	const blocksPerChunk = 100
+	const blocksPerChunk = 100 // empirically determined on 3.5 GHz Mac M2 Max
 	const chunkLen = blockLen * blocksPerChunk
 	if size-n > chunkLen {
 		wg := sync.WaitGroup{}
 		baseBlock := x.GetCounter()
 		chunkCount := uint64((size - n) / chunkLen) // how many chunks to proc.
 		if baseBlock+chunkCount*blocksPerChunk > baseBlock {
-			// keystream exhaustion (io.EOF) won't occur in chunk processing
+			// keystream exhaustion (io.EOF) won't occur during chunk processing
 			for chunk := uint64(0); chunk < chunkCount; chunk++ {
 				wg.Add(1)
 				go func(r ChaCha20_ctx, blk uint64, ni int) {
@@ -468,7 +468,7 @@ func (x *ChaCha20_ctx) Encrypt(m, c []byte) (n int, err error) {
 		fmt.Printf("finished chunk processing; n=%d\n", n)
 	}
 
-	// ======= finish up all bytes left over after chunk processing  =======
+	// ======= process all bytes left over after chunk processing  =======
 	for ; n < size; n++ {
 		if idx >= blockLen {
 			if x.eof {

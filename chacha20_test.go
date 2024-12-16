@@ -1,6 +1,6 @@
 // chacha20_test.go - test ChaCha20 implementation.
 // By Ron Charlton, public domain, 2022-08-28.
-// $Id: chacha20_test.go,v 1.153 2024-12-10 06:36:00-05 ron Exp $
+// $Id: chacha20_test.go,v 1.161 2024-12-16 06:14:26-05 ron Exp $
 //
 // Requires randIn.dat and randOut.dat files to run to completion.
 
@@ -54,16 +54,16 @@ func TestChaCha20(t *testing.T) {
 
 	// 'if false {' is for normal testing.
 	// ONLY USE true IF YOU CAN RUN WITH A KNOWN-GOOD Encrypt METHOD, LIKE
-	// chacha20.go v5.0.1.30.
+	// chacha20.go v4.48.
 	// 'if true {' generates two files: non-zero plaintext and its ciphertext
-	// and exits with t.Fatalf on purpose.
+	// and exits with t.Fatalf on purpose that says "files x and y were created".
 	if false {
 		// Create random non-zero randIn and randOut files for checking
 		// encryption of non-zero input and output.
 		gotRandIn := make([]byte, 300_030) // 4,687.9 blocks)
 		n, err := crand.Read(gotRandIn)
 		if err != nil || n != len(gotRandIn) {
-			t.Fatalf("Error creating randIn: n: %d, err: %v\n", n, err)
+			t.Fatalf("Error creating randIn data: n: %d, err: %v\n", n, err)
 		}
 		err = os.WriteFile(randInFileName, gotRandIn, 0644)
 		if err == nil {
@@ -148,7 +148,7 @@ func TestChaCha20(t *testing.T) {
 	// Test sequential chunk encryption of long non-Zero input using two halves
 	// of data from randIn.dat.
 	ctx = New(key, iv)
-	half := len(nonZeroIn) / 2 // nonZeroIn must an even length
+	half := len(nonZeroIn) / 2
 	if n, err := ctx.Encrypt(nonZeroIn[:half], gotNonZeroOut); err != nil ||
 		n != half {
 		t.Errorf("Encrypt() NonZero first half: n=%d  err=%v", n, err)
@@ -223,26 +223,30 @@ func TestChaCha20(t *testing.T) {
 	// Test chunk processing for proper err and n returns when keystream is
 	// exhausted, then test for panic.  Assumes chacha20:blocksPerChunk=100.
 	const blocksPerChunk = 100 // MUST MATCH ITS VALUE IN chacha20.go.
-	bc := blocksPerChunk
-	bcOffset := 1 // I tested with -2, -1, 0, 1, 2.
-	got = make([]byte, blockLen*(bc+bcOffset))
-	ctx.Seek(0 - uint64(bc+bcOffset))
-	n, err = ctx.Read(got)
-	if err != io.EOF {
-		t.Errorf("chunking EOF test: got %v want %v", err, io.EOF)
-	}
-	if n != blockLen*(bc+bcOffset) {
-		t.Errorf("chunking Read() return length at EOF:\ngot %d, want %d",
-			n, blockLen*(bc+bcOffset))
-	}
-	func() {
-		defer func() {
-			if r := recover(); r == nil {
-				t.Errorf("chunking ChaCha20 did not panic for Read after EOF")
-			}
+	var offsets = []int{-2, -1, 0, 1, 2}
+	for k := 0; k < len(offsets); k++ {
+		bcOffset := blocksPerChunk + offsets[k]
+		got = make([]byte, blockLen*bcOffset)
+		ctx.Seek(0 - uint64(bcOffset))
+		n, err = ctx.Read(got)
+		if err != io.EOF {
+			t.Errorf("chunking EOF test: offset %d got %v want %v",
+				offsets[k], err, io.EOF)
+		}
+		if n != blockLen*bcOffset {
+			t.Errorf("chunking Read() return length at EOF:\n offset %d got %d, want %d",
+				offsets[k], n, blockLen*bcOffset)
+		}
+		func() {
+			defer func() {
+				if r := recover(); r == nil {
+					t.Errorf("chunking ChaCha20 with offset %d did not panic for Read after EOF",
+						offsets[k])
+				}
+			}()
+			ctx.Read(got[:1])
 		}()
-		ctx.Read(got[:1])
-	}()
+	}
 
 	// Seek to block 0 should yield same result with XORKeyStream
 	ctx.Seek(0)
