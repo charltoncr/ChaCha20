@@ -62,7 +62,9 @@ to Encrypt.
 Encrypt returns io.EOF when the key stream is exhausted after producing
 1.2 zettabytes. It will panic if called with the the same x after io.EOF is
 returned, unless x has been re-initialized. The same key and iv values used
-to encrypt a message must be used to decrypt the message.
+to encrypt a message must be used to decrypt the message. Messages/Reads
+over about 6,400 bytes long will be processed in parallel for 2 to 10 times
+faster processing.
 
 ## func 
 ```go

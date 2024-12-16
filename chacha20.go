@@ -379,7 +379,8 @@ func (x *ChaCha20_ctx) GetCounter() (n uint64) {
 // the same x after io.EOF is returned, unless x has been
 // re-initialized.
 // The same key and iv values used to encrypt a message must be used to
-// decrypt the message.
+// decrypt the message.  Messages/Reads over about 6,400 bytes long will
+// be processed in parallel for 2 to 10 times faster processing.
 func (x *ChaCha20_ctx) Encrypt(m, c []byte) (n int, err error) {
 	size := len(m)
 	if size == 0 {
