@@ -1,6 +1,6 @@
 // chacha20_test.go - test ChaCha20 implementation.
 // By Ron Charlton, public domain, 2022-08-28.
-// $Id: chacha20_test.go,v 1.161 2024-12-16 06:14:26-05 ron Exp $
+// $Id: chacha20_test.go,v 1.163 2025-02-12 12:44:54-05 ron Exp $
 //
 // Requires randIn.dat and randOut.dat files to run to completion.
 
@@ -165,8 +165,8 @@ func TestChaCha20(t *testing.T) {
 		}
 	}
 
-	// Keystream should yield same result as Encrypt with any input
-	got = make([]byte, 2*blockLen)
+	// Keystream should yield same result as Encrypt given the same input
+	got = make([]byte, len(want))
 	ctx = New(key, iv)
 	ctx.Keystream(got)
 	if !bytes.Equal(got, want) {
@@ -354,6 +354,15 @@ func BenchmarkChaCha_Read(b *testing.B) {
 	m5e6 := make([]byte, 5_000_001)
 	b.SetBytes(int64(len(m5e6)))
 	ctx.SetRounds(20)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		ctx.Read(m5e6)
+	}
+}
+func BenchmarkChaCha_SmallMemoryRead(b *testing.B) {
+	m5e6 := make([]byte, 5_000_001)
+	b.SetBytes(int64(len(m5e6)))
+	ctx = NewSmallMemory(key, iv)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		ctx.Read(m5e6)
