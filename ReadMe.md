@@ -10,8 +10,8 @@ chacha20.go and chacha20_test.go are in the
 [public domain](https://creativecommons.org/publicdomain/zero/1.0/)
 and may be used for any purpose.
 
-This version uses goroutines. That yields 10X the performance on
-a 3.504 GHz 12-processor Mac Studio with M2 Max.
+This version uses goroutines, yielding 8X the performance on
+a 3.504 GHz 12-processor Mac Studio with M2 Max (10 processors).
 
 ChaCha20 has been
 [widely adopted](https://en.wikipedia.org/wiki/Salsa20#ChaCha20_adoption).
