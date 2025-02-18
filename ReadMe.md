@@ -11,7 +11,7 @@ chacha20.go and chacha20_test.go are in the
 and may be used for any purpose.
 
 This version uses goroutines, yielding 8X the performance on
-a 3.504 GHz 12-processor Mac Studio with M2 Max (10 processors).
+a 3.504 GHz 12-processor Mac Studio with M2 Max.
 
 ChaCha20 has been
 [widely adopted](https://en.wikipedia.org/wiki/Salsa20#ChaCha20_adoption).
