@@ -1,11 +1,12 @@
 <!-- title: ChaCha20 Read Me -->
-<!-- $Id: ReadMe.md,v 1.25 2024-11-20 14:47:55-05 ron Exp $ -->
+<!-- $Id: ReadMe.md,v 1.27 2025-03-02 10:40:48-05 ron Exp $ -->
 
 # ChaCha20 public domain encryption and decryption in Go
 
 Public domain chacha20.go implements the ChaCha20 encryption and decryption
 algorithm by D. J. Bernstein.  chacha20.go is derived from Bernstein's public
-domain [ref implementation](https://cr.yp.to/chacha.html).
+domain [ref implementation](https://cr.yp.to/chacha.html). chacha20.go
+implements crypto/cipher.Stream and io.Read interfaces.
 chacha20.go and chacha20_test.go are in the
 [public domain](https://creativecommons.org/publicdomain/zero/1.0/)
 and may be used for any purpose.
