@@ -54,7 +54,7 @@
 // https://github.com/skeeto/chacha-go.  That implementation is vastly slower
 // than this implementation for long length plaintext/ciphertext/keystream.
 //
-// $Id: chacha20.go,v 6.71 2025-03-01 10:46:37-05 ron Exp $
+// $Id: chacha20.go,v 6.72 2025-03-02 10:33:28-05 ron Exp $
 ////
 
 // Package chacha20 provides public domain ChaCha20 encryption and decryption.
@@ -75,7 +75,7 @@
 // parallel processing at between 2 and 9 times the speed of mono-processing.
 // All chacha20 methods share Encrypt's increased speed on similarly long slices.
 //
-// Parallel processing can allocate up to 290 KB of memory. If memory is tight
+// Parallel processing can allocate up to 580 KB of memory. If memory is tight
 // call NewSmallMemory() instead of New for a much smaller memory footprint.
 // Processing speed then will be dramatically slower for long byte slices.
 package chacha20
@@ -253,7 +253,7 @@ func salsa20_wordtobyte(input []uint32, rounds int, output []byte) {
 	binary.LittleEndian.PutUint32(output[4*15:], p)
 }
 
-// Limit memory use to 290 KB by limiting number of simultaneous goroutines.
+// Limit memory use to 580 KB by limiting number of simultaneous goroutines.
 // Larger maxRoutines value has little effect on speed.
 // Empirically determined on 12 processor 3.504 GHz Apple M2 Max.
 const maxGoroutines = 70
@@ -458,7 +458,7 @@ func (x *ChaCha20_ctx) Encrypt(m, c []byte) (n int, err error) {
 
 		// ==== Chunk-process with goroutines if possible. One chunk per goroutine.
 		// Messages longer than about 25,600 bytes will be chunk-processed unless
-		// x.eof==true would occur during chunking. ====
+		// x.eof==true (extremely improbable) would occur during chunking. ====
 		// idx==blockLen must be true here.
 		const blocksPerChunk = 200 // empirically determined on 3.5 GHz Mac M2 Max
 		const chunkLen = blockLen * blocksPerChunk
