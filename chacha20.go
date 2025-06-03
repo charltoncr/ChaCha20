@@ -13,7 +13,7 @@
 // Much later I parallelized the Encrypt method that all other relevant
 // methods depend on.  It resulted in 8X the speed for large input data
 // on a 12-processor M2 Max Mac Studio.  To limit the amount of allocated
-// memory goroutines are throttled at 70 simultaneous instances.
+// memory, goroutines are throttled at 300 simultaneous instances.
 //
 // From the C file (chacha[-ref].c (at https://cr.yp.to/chacha.html):
 //		chacha-ref.c version 20080118
@@ -31,7 +31,7 @@
 // Type byte must be an alias for uint8.
 //
 // Example use (encrypt a file to another file; not sufficient for
-// cryptographic use unless key and iv are set appropriately):
+// cryptographic use unless key and iv are set appropriately, etc.):
 //		// 32-byte key and 8-byte iv assumed.
 //		// (error checks omitted)
 //		b, err := os.ReadFile("myfile")
@@ -39,28 +39,39 @@
 //		ctx.Encrypt(b, b)
 //		err = os.WriteFile("myfile.encrypted", b, 0644)
 //
-// chacha20.go v6.71 Encrypt on 3.504 GHz M2 Max Mac Studio w/12 processors,
-// 5 MB message, and 100 blocks-per-chunk parallel processing (go test -bench=.):
+// chacha20.go v6.80 Encrypt on 3.504 GHz M2 Max Mac Studio w/12 processors,
+// 5 MB message, and 200 blocks-per-chunk parallel processing (go test -bench=.):
 //
 //	 Rounds	 GB/s  ns/block
 //	 ------	 ----  --------
-//	    8	 5.96     10
-//	   12	 4.92     13
-//	   20	 3.66     17
+//	    8	 6.3      10      Default Tuning [=TuneParallel(200, 300)]
+//	   12	 5.2      12            "
+//	   20	 3.8      16            "
+//     20    0.46    140      NewSmallMemory
+//      8    6.5       9.6    TuneParallel(400, 3000) (~maximum speed)
+//     20    2.1      30      TuneParallel(50, 30)    (~minimun memory)
 //
-//	 Read: 3.2 GB/s.
+//	 Read:
+//     Rounds   GB/s
+//     ------   ----
+//		 8      5.0
+//		12      4.3
+//		20      3.6
 //
 // See an alternate implementation of chacha at
 // https://github.com/skeeto/chacha-go.  That implementation is vastly slower
-// than this implementation for long length plaintext/ciphertext/keystream.
+// than this implementation for long length plaintext/ciphertext/keystream/Read.
 //
-// $Id: chacha20.go,v 6.72 2025-03-02 10:33:28-05 ron Exp $
+// $Id: chacha20.go,v 6.81 2025-06-03 09:46:38-04 ron Exp $
 ////
 
 // Package chacha20 provides public domain ChaCha20 encryption and decryption.
-// It is derived from public domain chacha[-ref].c at
-// <https://cr.yp.to/chacha.html>. It implements io.Reader and
-// crypto/cipher.Stream, as well as several other methods.
+// It is derived from public domain file chacha[-ref].c at
+// <https://cr.yp.to/chacha.html>. It implements the io.Reader and
+// crypto/cipher.Stream interfaces, as well as several other methods.
+//
+// On long byte slices (>25,600 bytes) ChaCha20 provides speed approximating
+// that of hardware-implemented AES encryption.
 //
 // Some chacha20 methods panic when a ChaCha key stream is exhausted
 // after producing about 1.2 zettabytes if io.EOF is not honored.
@@ -75,9 +86,13 @@
 // parallel processing at between 2 and 9 times the speed of mono-processing.
 // All chacha20 methods share Encrypt's increased speed on similarly long slices.
 //
-// Parallel processing can allocate up to 580 KB of memory. If memory is tight
+// Parallel processing can allocate up to 11,200 bytes of memory. If memory
+// is tight
 // call NewSmallMemory() instead of New for a much smaller memory footprint.
 // Processing speed then will be dramatically slower for long byte slices.
+// As an alternative, TuneParallel can also adjust memory allocation vs speed
+// for parallel processing, achieving four times the speed of non-parallel
+// processing with a minimal memory footprint.
 package chacha20
 
 import (
@@ -88,7 +103,7 @@ import (
 
 // Rounds can be 8, 12 or 20.  Lower numbers are likely less secure.
 // Higher numbers consume more compute time.  ChaCha20 requires 20,
-// ChaCha12 requires 12, and ChaCha8 requires 8.
+// ChaCha12 requires 12, and ChaCha8 requires 8 rounds.
 const defaultRounds = 20
 
 // Using individual variables instead of an array provides 32% faster code.
@@ -253,36 +268,49 @@ func salsa20_wordtobyte(input []uint32, rounds int, output []byte) {
 	binary.LittleEndian.PutUint32(output[4*15:], p)
 }
 
-// Limit memory use to 580 KB by limiting number of simultaneous goroutines.
-// Larger maxRoutines value has little effect on speed.
-// Empirically determined on 12 processor 3.504 GHz Apple M2 Max.
-const maxGoroutines = 70
-
-var guard = make(chan struct{}, maxGoroutines)
-
 // ChaCha block length in bytes
-const blockLen int = 64
+const blockLen = 64
 
-// ChaCha20_ctx contains state information for a ChaCha20 context.
-// ChaCha20_ctx implements the io.Reader and the crypto/cipher.Stream
+// Tuneable parameters; can be set programmatically via TuneParallel
+
+// Limit memory allocation to 51.6 KB by limiting number of simultaneous
+// goroutines.  Larger maxRoutines values have little effect on speed.
+// Each simultaneous goroutine adds about 172 B of simultaneous memory allocation.
+// Empirically determined on 12 processor 3.504 GHz Apple Studio with M2 Max.
+// The size of guard can be changed with TundParallel.
+const maxGoroutines = 300
+
+// Used in parallel processing; it can be changed with TundParallel.
+const blocksPerChunk = 200 // empirically determined on 3.5 GHz Mac M2 Max
+
+// End tuneable parameters
+
+// Ctx contains state information for a ChaCha20 context.
+// Ctx implements the io.Reader and the crypto/cipher.Stream
 // interfaces.
-type ChaCha20_ctx struct {
-	input    [blockLen / 4]uint32
-	output   [blockLen]byte
-	next     int
-	eof      bool
-	rounds   int
-	parallel bool
+type Ctx struct {
+	input          [blockLen / 4]uint32
+	output         [blockLen]byte
+	next           int
+	eof            bool
+	rounds         int
+	parallel       bool
+	blocksPerChunk int
+	goroutinesMax  int
+	guard          chan struct{}
 }
 
 // New allocates a new ChaCha20 context and sets it up
 // with the caller's key and iv.  The default number of rounds is 20.  To
 // use a different number of rounds, call SetRounds also.
-func New(key, iv []byte) (ctx *ChaCha20_ctx) {
-	ctx = &ChaCha20_ctx{
-		next:     blockLen,
-		rounds:   defaultRounds,
-		parallel: true,
+func New(key, iv []byte) (ctx *Ctx) {
+	ctx = &Ctx{
+		next:           blockLen,
+		rounds:         defaultRounds,
+		parallel:       true,
+		blocksPerChunk: blocksPerChunk,
+		goroutinesMax:  maxGoroutines,
+		guard:          make(chan struct{}, maxGoroutines),
 	}
 	ctx.KeySetup(key)
 	ctx.IvSetup(iv)
@@ -292,8 +320,8 @@ func New(key, iv []byte) (ctx *ChaCha20_ctx) {
 // NewSmallMemory allocates a context the same as New does but doesn't use
 // parallel processing.  Processing speed will be dramtically slower and memory
 // use will be much less for long messages.  The default number of rounds is 20.
-// To use a different number of rounds, call ctx.SetRounds also.
-func NewSmallMemory(key, iv []byte) (ctx *ChaCha20_ctx) {
+// To use a different number of rounds, call SetRounds also.
+func NewSmallMemory(key, iv []byte) (ctx *Ctx) {
 	ctx = New(key, iv)
 	ctx.parallel = false
 	return
@@ -305,7 +333,7 @@ func NewSmallMemory(key, iv []byte) (ctx *ChaCha20_ctx) {
 // SetRounds panics with any other value.  ChaCha20's default number
 // of rounds is 20.  Smaller r values are likely less secure but are faster.
 // ChaCha8 requires 8 rounds, ChaCha12 requires 12 and ChaCha20 requires 20.
-func (x *ChaCha20_ctx) SetRounds(r int) {
+func (x *Ctx) SetRounds(r int) {
 	if !(r == 8 || r == 12 || r == 20) {
 		panic("chacha20:SetRounds: invalid number of rounds")
 	}
@@ -318,7 +346,7 @@ var tau = []byte("expand 16-byte k")
 // KeySetup sets up ChaCha20 context x with key.
 // KeySetup panics if len(key) is not 16 or 32. A key length of 32 is
 // recommended.
-func (x *ChaCha20_ctx) KeySetup(key []byte) {
+func (x *Ctx) KeySetup(key []byte) {
 	var constants []byte
 	kbytes := len(key)
 
@@ -351,7 +379,7 @@ func (x *ChaCha20_ctx) KeySetup(key []byte) {
 // IvSetup sets initialization vector iv as a nonce for ChaCha20 context x.
 // It also calls Seek(0).
 // IvSetup panics if len(iv) is not 8.
-func (x *ChaCha20_ctx) IvSetup(iv []byte) {
+func (x *Ctx) IvSetup(iv []byte) {
 	if len(iv) != 8 {
 		panic("chacha20: invalid iv length; must be 8.")
 	}
@@ -362,7 +390,7 @@ func (x *ChaCha20_ctx) IvSetup(iv []byte) {
 
 // IvSetupUint64 sets x's initialization vector (nonce) to the value in n.
 // It also calls Seek(0).
-func (x *ChaCha20_ctx) IvSetupUint64(n uint64) {
+func (x *Ctx) IvSetupUint64(n uint64) {
 	var b [8]byte
 	x.Seek(0)
 	binary.LittleEndian.PutUint64(b[:], n)
@@ -372,7 +400,7 @@ func (x *ChaCha20_ctx) IvSetupUint64(n uint64) {
 
 // Seek moves x directly to 64-byte block number n in constant time.
 // Seek(0) sets x back to its initial state.
-func (x *ChaCha20_ctx) Seek(n uint64) {
+func (x *Ctx) Seek(n uint64) {
 	var b [8]byte
 	binary.LittleEndian.PutUint64(b[:], n)
 	x.input[12] = binary.LittleEndian.Uint32(b[0:])
@@ -382,7 +410,7 @@ func (x *ChaCha20_ctx) Seek(n uint64) {
 }
 
 // GetCounter returns x's block counter value.
-func (x *ChaCha20_ctx) GetCounter() (n uint64) {
+func (x *Ctx) GetCounter() (n uint64) {
 	var b [8]byte
 	binary.LittleEndian.PutUint32(b[0:], x.input[12])
 	binary.LittleEndian.PutUint32(b[4:], x.input[13])
@@ -390,13 +418,52 @@ func (x *ChaCha20_ctx) GetCounter() (n uint64) {
 }
 
 // UseParallel accepts a boolean to determine whether x uses parallel
-// processing.  Parallel operation uses large amounts of memory; if
+// processing.  Parallel operation uses larger amounts of memory; if
 // memory is scarce call UseParallel with b false after calling New.
 // False b will result in dramatically slower speed for all ChaCha20 operations.
-// Calling UseParallel is not required if NewSmallMemory was used to
+// Calling UseParallel is not necessary if NewSmallMemory was used to
 // instantiate x.
-func (x *ChaCha20_ctx) UseParallel(b bool) {
+func (x *Ctx) UseParallel(b bool) {
 	x.parallel = b
+}
+
+// TuneParallel is not required for typical ChaCha20 use.  In unusual
+// circumstances it allows adjustments to parallel processing parameters
+// to make time and space tradeoffs.  Each Ctx instance has its own
+// parallel processing parameters.
+// Defaults are equivalent to TuneParallel(200, 300).
+//
+// TuneParallel has no effect on processing short messages, or when parallel
+// processing is disabled by calling UseParallel(false) or NewSmallMemory.
+//
+// If BlocksPerGoroutine > 0 it sets how many ChaCha20 blocks of
+// 64 bytes are processed by each goroutine instance.  Smaller values slow
+// processing generally, but allow shorter length messages to be processed
+// in parallel, thereby speeding up processing for them.
+//
+// If MaxGoroutines > 0 it determines how many goroutines may run
+// simultaneously.
+// Larger values will speed up processing somewhat, also allowing more memory
+// to be allocated at once. The default value, 300, results in simultaneous
+// allocation of 51,600 bytes.  Maximum simultaneous memory allocation is
+// MaxGoroutines * 172.  Go documentation recommends
+// liberty when issuing simultaneous goroutines, stating that 3,000
+// goroutines are easily managed by the Go runtime.
+//
+// To change only one parameter in a call use zero for other parameter.
+//
+// With TuneParallel(50, 300) (allowing parallel processing of messages as
+// short as 6,400 bytes) ChaCha20 with parallel processing is 4.6 times as
+// fast (2.1 GB/s vs 457 MB/s) as non-parallel processing on a
+// 3.5 GHz Apple M2 with 12 processors.  YMMV.
+func (x *Ctx) TuneParallel(BlocksPerGoroutine, MaxGoroutines int) {
+	if BlocksPerGoroutine > 0 {
+		x.blocksPerChunk = BlocksPerGoroutine
+	}
+
+	if MaxGoroutines > 0 {
+		x.guard = make(chan struct{}, MaxGoroutines)
+	}
 }
 
 // Encrypt puts ciphertext into c given plaintext m.  Any length is allowed
@@ -406,15 +473,15 @@ func (x *ChaCha20_ctx) UseParallel(b bool) {
 // in sequential segments with multiple calls to Encrypt.
 //
 // Encrypt returns io.EOF when the key stream is exhausted
-// after producing 1.2 zettabytes.  It will panic if called with the
-// the same x after io.EOF is returned, unless x has been
-// re-initialized.
+// (extremely improbable) after producing 1.2 zettabytes.
+// It will panic if called with the the same x after io.EOF is returned,
+// unless x has been re-initialized.
 //
 // The same key, iv and rounds used to encrypt a message must be used to
-// decrypt the message.  Messages and Reads over about 12,800 bytes long will
+// decrypt the message.  Messages and Reads over about 25,600 bytes long will
 // be parallel processed 2-10 times as fast, unless NewSmallMemory is
 // used to allocate x.
-func (x *ChaCha20_ctx) Encrypt(m, c []byte) (n int, err error) {
+func (x *Ctx) Encrypt(m, c []byte) (n int, err error) {
 	size := len(m)
 	if size == 0 {
 		return
@@ -460,18 +527,18 @@ func (x *ChaCha20_ctx) Encrypt(m, c []byte) (n int, err error) {
 		// Messages longer than about 25,600 bytes will be chunk-processed unless
 		// x.eof==true (extremely improbable) would occur during chunking. ====
 		// idx==blockLen must be true here.
-		const blocksPerChunk = 200 // empirically determined on 3.5 GHz Mac M2 Max
-		const chunkLen = blockLen * blocksPerChunk
+		var blocksPerChunk = x.blocksPerChunk
+		var chunkLen = blockLen * blocksPerChunk
 		if size-n > chunkLen*2 {
 			baseBlock := x.GetCounter()
 			chunkCount := uint64((size - n) / chunkLen) // how many chunks to process
-			if baseBlock+chunkCount*blocksPerChunk > baseBlock {
+			if baseBlock+chunkCount*uint64(x.blocksPerChunk) > baseBlock {
 				// chunk processing won't reach keystream exhaustion (io.EOF)
 				wg := sync.WaitGroup{}
 				for chunk := uint64(0); chunk < chunkCount; chunk++ {
+					x.guard <- struct{}{} // blocks to limit simultaneous goroutines
 					wg.Add(1)
-					guard <- struct{}{} // blocks if guard channel is full
-					go func(r ChaCha20_ctx, blk uint64, ni int) {
+					go func(r Ctx, blk uint64, ni int) {
 						defer wg.Done()
 						r.Seek(blk)
 						for j := 0; j < blocksPerChunk; j++ {
@@ -485,9 +552,9 @@ func (x *ChaCha20_ctx) Encrypt(m, c []byte) (n int, err error) {
 								ni++
 							}
 						}
-						<-guard
+						<-x.guard
 					}(*x, baseBlock, n)
-					baseBlock += blocksPerChunk
+					baseBlock += uint64(blocksPerChunk)
 					n += chunkLen
 				}
 				wg.Wait()
@@ -497,7 +564,7 @@ func (x *ChaCha20_ctx) Encrypt(m, c []byte) (n int, err error) {
 			}
 		}
 
-	}
+	} // if x.parallel
 
 	// ======= process all bytes left over after chunk processing  =======
 	for ; n < size; n++ {
@@ -538,8 +605,8 @@ func (x *ChaCha20_ctx) Encrypt(m, c []byte) (n int, err error) {
 // re-initialized.
 // The same key, iv and rounds used to encrypt a message must be used
 // to decrypt the message.
-func (x *ChaCha20_ctx) Decrypt(c, m []byte) (int, error) {
-	if x.eof {
+func (x *Ctx) Decrypt(c, m []byte) (int, error) {
+	if x.eof && x.next >= blockLen {
 		panic("chacha20.Decrypt: key stream is exhausted")
 	}
 	if len(m) < len(c) {
@@ -551,7 +618,7 @@ func (x *ChaCha20_ctx) Decrypt(c, m []byte) (int, error) {
 // Keystream fills stream with cryptographically secure pseudorandom bytes
 // from x's key stream when a random key and iv are used.  Keystream
 // panics when the ChaCha key stream is exhausted after producing 1.2 zettabytes.
-func (x *ChaCha20_ctx) Keystream(stream []byte) {
+func (x *Ctx) Keystream(stream []byte) {
 	if x.eof && len(stream) >= blockLen {
 		panic("chacha20.Keystream: key stream is exhausted")
 	}
@@ -560,14 +627,14 @@ func (x *ChaCha20_ctx) Keystream(stream []byte) {
 }
 
 // The idea for adding XORKeyStream and Read came from skeeto's public
-// domain ChaCha-go implementation.  Neither is copied or ported from that
+// domain ChaCha-go implementation.  Neither is copied nor ported from that
 // implementation.
 
 // XORKeyStream implements the crypto/cipher.Stream interface.
 // XORKeyStream XORs src bytes with ChaCha's key stream and puts the result
 // in dst.  XORKeyStream panics if len(dst) is less than len(src), or
 // when the ChaCha key stream is exhausted after producing 1.2 zettabytes.
-func (x *ChaCha20_ctx) XORKeyStream(dst, src []byte) {
+func (x *Ctx) XORKeyStream(dst, src []byte) {
 	if x.eof && len(src) >= blockLen {
 		panic("chacha20.XORKeyStream: key stream is exhausted")
 	}
@@ -584,7 +651,7 @@ func (x *ChaCha20_ctx) XORKeyStream(dst, src []byte) {
 // zettabytes.  It will panic if called with the
 // the same x after io.EOF is returned, unless IvSetup is called with a new
 // value first.
-func (x *ChaCha20_ctx) Read(b []byte) (int, error) {
+func (x *Ctx) Read(b []byte) (int, error) {
 	if x.eof && len(b) >= blockLen {
 		panic("chacha20.Read: key stream is exhausted")
 	}

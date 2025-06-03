@@ -1,6 +1,6 @@
 // chacha20_test.go - test ChaCha20 implementation.
 // By Ron Charlton, public domain, 2022-08-28.
-// $Id: chacha20_test.go,v 1.163 2025-02-12 12:44:54-05 ron Exp $
+// $Id: chacha20_test.go,v 1.174 2025-06-03 09:34:48-04 ron Exp $
 //
 // Requires randIn.dat and randOut.dat files to run to completion.
 
@@ -11,13 +11,12 @@ import (
 	"crypto/cipher"
 	crand "crypto/rand"
 	"io"
-	"log"
 	"os"
 	"testing"
 )
 
-var _ io.Reader = &ChaCha20_ctx{}
-var _ cipher.Stream = &ChaCha20_ctx{}
+var _ io.Reader = &Ctx{}
+var _ cipher.Stream = &Ctx{}
 
 func TestChaCha20(t *testing.T) {
 	// IETF test vector for 20 rounds with a zero key and iv. Key length: 32
@@ -118,7 +117,7 @@ func TestChaCha20(t *testing.T) {
 		t.Errorf("Encrypt() NonZero: n=%d  err=%v", n, err)
 	}
 	if !bytes.Equal(gotNonZeroOut, nonZeroOut) {
-		for i := 0; i < len(nonZeroIn); i++ {
+		for i := range len(nonZeroIn) {
 			if gotNonZeroOut[i] != nonZeroOut[i] {
 				t.Errorf("Encrypt() NonZero: got[%d]=%d, want[%d]=%d", i, gotNonZeroOut[i], i, nonZeroOut[i])
 			}
@@ -138,7 +137,7 @@ func TestChaCha20(t *testing.T) {
 	ctx.Encrypt(nonZeroIn[part1Size:], temp)
 	got = append(got, temp[:part2Size]...)
 	if !bytes.Equal(got, piecewiseWant) {
-		for i := 0; i < len(nonZeroIn); i++ {
+		for i := range len(nonZeroIn) {
 			if got[i] != piecewiseWant[i] {
 				t.Errorf("Encrypt() piecewise: got[%d]=%d, want[%d]=%d", i, got[i], i, piecewiseWant[i])
 			}
@@ -158,7 +157,7 @@ func TestChaCha20(t *testing.T) {
 		t.Errorf("Encrypt() NonZero second half: n=%d  err=%v", n, err)
 	}
 	if !bytes.Equal(gotNonZeroOut, nonZeroOut) {
-		for i := 0; i < len(nonZeroIn); i++ {
+		for i := range len(nonZeroIn) {
 			if gotNonZeroOut[i] != nonZeroOut[i] {
 				t.Errorf("Encrypt() NonZero by halves: got[%d]=%d, want[%d]=%d", i, gotNonZeroOut[i], i, nonZeroOut[i])
 			}
@@ -221,10 +220,10 @@ func TestChaCha20(t *testing.T) {
 	}()
 
 	// Test chunk processing for proper err and n returns when keystream is
-	// exhausted, then test for panic.  Assumes chacha20:blocksPerChunk=100.
-	const blocksPerChunk = 100 // MUST MATCH ITS VALUE IN chacha20.go.
+	// exhausted, then test for panic.  Assumes chacha20:blocksPerChunk=200.
+	const blocksPerChunk = 200 // MUST MATCH ITS VALUE IN chacha20.go.
 	var offsets = []int{-2, -1, 0, 1, 2}
-	for k := 0; k < len(offsets); k++ {
+	for k := range len(offsets) {
 		bcOffset := blocksPerChunk + offsets[k]
 		got = make([]byte, blockLen*bcOffset)
 		ctx.Seek(0 - uint64(bcOffset))
@@ -258,12 +257,8 @@ func TestChaCha20(t *testing.T) {
 
 	// Do a simple encrypt/decrypt with random key and iv, and verify
 	// encrypt/decrypt are complementary.
-	if _, err = crand.Read(key); err != nil {
-		log.Fatalf("error from crypto/rand.Read: %v", err)
-	}
-	if _, err = crand.Read(iv); err != nil {
-		log.Fatalf("error from crypto/rand.Read: %v", err)
-	}
+	crand.Read(key) // never fails
+	crand.Read(iv)
 	// encrypt
 	ctx = New(key, iv)
 	m := make([]byte, 5_000_000)
@@ -278,12 +273,26 @@ func TestChaCha20(t *testing.T) {
 	got = make([]byte, len(c))
 	ctx.Decrypt(c, got)
 	if !bytes.Equal(got, m) {
-		for i := 0; i < len(m); i++ {
+		for i := range len(m) {
 			if got[i] != m[i] {
 				t.Errorf("simple enc+dec: got[%d]=%d, m[%d]=%d", i, got[i], i, m[i])
 			}
 		}
 		t.Errorf("simple enc+dec - got[:5]: %v; want[:5]: %v", got[:5], m[:5])
+	}
+
+	// check for same keystream for parallel and non-parallel processing
+	crand.Read(key) // never fails
+	crand.Read(iv)
+	ctx = New(key, iv)
+	c = make([]byte, 5e6)
+	d := make([]byte, 5e6)
+	ctx.Read(c)
+	ctx.UseParallel(false)
+	ctx.Seek(0)
+	ctx.Read(d)
+	if !bytes.Equal(c, d) {
+		t.Errorf("parallel vs non-parellel: d != c")
 	}
 
 	// Test encrypting a []byte longer than 2^32 (verify use of variable types).
@@ -299,14 +308,11 @@ func TestChaCha20(t *testing.T) {
 
 // setup for benchmarks:
 var key, iv []byte
-var ctx *ChaCha20_ctx
+var ctx *Ctx
 var m5e6 = make([]byte, 5_000_000)
 
 func init() {
-	_, err := crand.Read(m5e6)
-	if err != nil {
-		log.Fatalf("error from crypto/rand.Read: %v", err)
-	}
+	crand.Read(m5e6) // never fails
 	key = make([]byte, 32)
 	crand.Read(key)
 	iv = make([]byte, 8)
@@ -317,54 +323,66 @@ func init() {
 func BenchmarkChaCha_8rnds(b *testing.B) {
 	b.SetBytes(int64(len(m5e6)))
 	ctx.SetRounds(8)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		n, err := ctx.Encrypt(m5e6, m5e6)
-		if n != len(m5e6) || err != nil {
-			b.Fatalf("8rnds failed: n=%d, err=%v", n, err)
-		}
+	for b.Loop() {
+		ctx.Encrypt(m5e6, m5e6)
 	}
 }
 
 func BenchmarkChaCha_12rnds(b *testing.B) {
 	b.SetBytes(int64(len(m5e6)))
 	ctx.SetRounds(12)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		n, err := ctx.Encrypt(m5e6, m5e6)
-		if n != len(m5e6) || err != nil {
-			b.Fatalf("12rnds failed: n=%d, err=%v", n, err)
-		}
+	for b.Loop() {
+		ctx.Encrypt(m5e6, m5e6)
 	}
 }
 
 func BenchmarkChaCha_20rnds(b *testing.B) {
 	b.SetBytes(int64(len(m5e6)))
 	ctx.SetRounds(20)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		n, err := ctx.Encrypt(m5e6, m5e6)
-		if n != len(m5e6) || err != nil {
-			b.Fatalf("20rnds failed: n=%d, err=%v", n, err)
-		}
+	for b.Loop() {
+		ctx.Encrypt(m5e6, m5e6)
+	}
+}
+func BenchmarkChaCha_MaxSpeed(b *testing.B) {
+	b.SetBytes(int64(len(m5e6)))
+	ctx.SetRounds(8)
+	ctx.TuneParallel(400, 300)
+	for b.Loop() {
+		ctx.Encrypt(m5e6, m5e6)
 	}
 }
 
-func BenchmarkChaCha_Read(b *testing.B) {
-	m5e6 := make([]byte, 5_000_001)
+func BenchmarkChaCha_MinSpace(b *testing.B) {
 	b.SetBytes(int64(len(m5e6)))
 	ctx.SetRounds(20)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	ctx.TuneParallel(50, 30)
+	for b.Loop() {
+		ctx.Encrypt(m5e6, m5e6)
+	}
+}
+
+func BenchmarkChaCha_Read8rnds(b *testing.B) {
+	b.SetBytes(int64(len(m5e6)))
+	ctx.TuneParallel(200, 300)
+	ctx.SetRounds(8)
+	for b.Loop() {
 		ctx.Read(m5e6)
 	}
 }
-func BenchmarkChaCha_SmallMemoryRead(b *testing.B) {
-	m5e6 := make([]byte, 5_000_001)
+
+func BenchmarkChaCha_Read12rnds(b *testing.B) {
 	b.SetBytes(int64(len(m5e6)))
-	ctx = NewSmallMemory(key, iv)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	ctx.SetRounds(12)
+	for b.Loop() {
+		ctx.Read(m5e6)
+	}
+}
+
+func BenchmarkChaCha_Read20rnds(b *testing.B) {
+	m5e6 := make([]byte, 5e6)
+	b.SetBytes(int64(len(m5e6)))
+	ctx.SetRounds(20)
+	for b.Loop() {
 		ctx.Read(m5e6)
 	}
 }
@@ -376,8 +394,16 @@ func BenchmarkOneBlockXORStream(b *testing.B) {
 	var buf [blockLen]byte
 	c := New(key[:], iv[:])
 	c.SetRounds(20)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		c.XORKeyStream(buf[:], buf[:])
+	}
+}
+
+func BenchmarkChaCha_SmallMemory20rnds(b *testing.B) {
+	b.SetBytes(int64(len(m5e6)))
+	ctxSmallMem := NewSmallMemory(key, iv)
+	ctxSmallMem.SetRounds(20)
+	for b.Loop() {
+		ctxSmallMem.Encrypt(m5e6, m5e6)
 	}
 }
