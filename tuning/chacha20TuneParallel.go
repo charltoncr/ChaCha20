@@ -1,6 +1,6 @@
 ////
 // chacha20TuneParallel.go - Test varying blocksPerChunk for speed.
-// $Id: chacha20TuneParallel.go,v 1.17 2025-06-07 12:58:38-04 ron Exp $
+// $Id: chacha20TuneParallel.go,v 1.18 2025-06-08 16:04:54-04 ron Exp $
 //
 // Usage: go run chacha20TuneParallel.go
 //
@@ -12,7 +12,6 @@ package main
 import (
 	"chacha20"
 	"crypto/rand"
-	crand "crypto/rand"
 	"fmt"
 
 	u "util"
@@ -52,7 +51,7 @@ func main() {
 
 	// Measure non-parallel processing speed.
 	data = make([]byte, 2*459e6)
-	crand.Read(data)
+	rand.Read(data)
 	ctx.UseParallel(false)
 	start := u.Secs()
 	ctx.Encrypt(data, data)
