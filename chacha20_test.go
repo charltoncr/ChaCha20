@@ -1,6 +1,6 @@
 // chacha20_test.go - test ChaCha20 implementation.
 // By Ron Charlton, public domain, 2022-08-28.
-// $Id: chacha20_test.go,v 1.174 2025-06-03 09:34:48-04 ron Exp $
+// $Id: chacha20_test.go,v 1.180 2025-08-04 07:03:37-04 ron Exp $
 //
 // Requires randIn.dat and randOut.dat files to run to completion.
 
@@ -117,7 +117,7 @@ func TestChaCha20(t *testing.T) {
 		t.Errorf("Encrypt() NonZero: n=%d  err=%v", n, err)
 	}
 	if !bytes.Equal(gotNonZeroOut, nonZeroOut) {
-		for i := range len(nonZeroIn) {
+		for i := 0; i < len(nonZeroIn); i++ {
 			if gotNonZeroOut[i] != nonZeroOut[i] {
 				t.Errorf("Encrypt() NonZero: got[%d]=%d, want[%d]=%d", i, gotNonZeroOut[i], i, nonZeroOut[i])
 			}
@@ -137,7 +137,7 @@ func TestChaCha20(t *testing.T) {
 	ctx.Encrypt(nonZeroIn[part1Size:], temp)
 	got = append(got, temp[:part2Size]...)
 	if !bytes.Equal(got, piecewiseWant) {
-		for i := range len(nonZeroIn) {
+		for i := 0; i < len(nonZeroIn); i++ {
 			if got[i] != piecewiseWant[i] {
 				t.Errorf("Encrypt() piecewise: got[%d]=%d, want[%d]=%d", i, got[i], i, piecewiseWant[i])
 			}
@@ -157,7 +157,7 @@ func TestChaCha20(t *testing.T) {
 		t.Errorf("Encrypt() NonZero second half: n=%d  err=%v", n, err)
 	}
 	if !bytes.Equal(gotNonZeroOut, nonZeroOut) {
-		for i := range len(nonZeroIn) {
+		for i := 0; i < len(nonZeroIn); i++ {
 			if gotNonZeroOut[i] != nonZeroOut[i] {
 				t.Errorf("Encrypt() NonZero by halves: got[%d]=%d, want[%d]=%d", i, gotNonZeroOut[i], i, nonZeroOut[i])
 			}
@@ -223,7 +223,7 @@ func TestChaCha20(t *testing.T) {
 	// exhausted, then test for panic.  Assumes chacha20:blocksPerChunk=200.
 	const blocksPerChunk = 200 // MUST MATCH ITS VALUE IN chacha20.go.
 	var offsets = []int{-2, -1, 0, 1, 2}
-	for k := range len(offsets) {
+	for k := 0; k < len(offsets); k++ {
 		bcOffset := blocksPerChunk + offsets[k]
 		got = make([]byte, blockLen*bcOffset)
 		ctx.Seek(0 - uint64(bcOffset))
@@ -273,7 +273,7 @@ func TestChaCha20(t *testing.T) {
 	got = make([]byte, len(c))
 	ctx.Decrypt(c, got)
 	if !bytes.Equal(got, m) {
-		for i := range len(m) {
+		for i := 0; i < len(m); i++ {
 			if got[i] != m[i] {
 				t.Errorf("simple enc+dec: got[%d]=%d, m[%d]=%d", i, got[i], i, m[i])
 			}
@@ -281,18 +281,20 @@ func TestChaCha20(t *testing.T) {
 		t.Errorf("simple enc+dec - got[:5]: %v; want[:5]: %v", got[:5], m[:5])
 	}
 
-	// check for same keystream for parallel and non-parallel processing
+	// check for same ciphertext for parallel and non-parallel processing
 	crand.Read(key) // never fails
 	crand.Read(iv)
 	ctx = New(key, iv)
-	c = make([]byte, 5e6)
-	d := make([]byte, 5e6)
-	ctx.Read(c)
+	p := make([]byte, 5e6)
+	np := make([]byte, len(p))
+	crand.Read(p)
+	copy(np, p)
+	ctx.Encrypt(p, p)
 	ctx.UseParallel(false)
 	ctx.Seek(0)
-	ctx.Read(d)
-	if !bytes.Equal(c, d) {
-		t.Errorf("parallel vs non-parellel: d != c")
+	ctx.Encrypt(np, np)
+	if !bytes.Equal(p, np) {
+		t.Errorf("parallel vs non-parallel: p != np")
 	}
 
 	// Test encrypting a []byte longer than 2^32 (verify use of variable types).
@@ -392,6 +394,7 @@ func BenchmarkOneBlockXORStream(b *testing.B) {
 	var key [32]byte
 	var iv [8]byte
 	var buf [blockLen]byte
+	b.SetBytes(int64(len(buf)))
 	c := New(key[:], iv[:])
 	c.SetRounds(20)
 	for b.Loop() {

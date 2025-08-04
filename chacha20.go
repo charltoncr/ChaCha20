@@ -62,7 +62,7 @@
 // https://github.com/skeeto/chacha-go.  That implementation is vastly slower
 // than this implementation for long length plaintext/ciphertext/keystream/Read.
 //
-// $Id: chacha20.go,v 6.81 2025-06-03 09:46:38-04 ron Exp $
+// $Id: chacha20.go,v 6.82 2025-08-04 07:03:37-04 ron Exp $
 ////
 
 // Package chacha20 provides public domain ChaCha20 encryption and decryption.
@@ -271,16 +271,20 @@ func salsa20_wordtobyte(input []uint32, rounds int, output []byte) {
 // ChaCha block length in bytes
 const blockLen = 64
 
-// Tuneable parameters; can be set programmatically via TuneParallel
+// Tuneable parameters; can be set programmatically via TuneParallel.
 
-// Limit memory allocation to 51.6 KB by limiting number of simultaneous
+// Limit memory allocation to 51.6 KB by limiting the number of simultaneous
 // goroutines.  Larger maxRoutines values have little effect on speed.
 // Each simultaneous goroutine adds about 172 B of simultaneous memory allocation.
 // Empirically determined on 12 processor 3.504 GHz Apple Studio with M2 Max.
-// The size of guard can be changed with TundParallel.
+// The effective number can be changed with TuneParallel.  This is the
+// default value.
 const maxGoroutines = 300
 
-// Used in parallel processing; it can be changed with TundParallel.
+// blocksPerChunk is used in parallel processing; it can be changed with
+// TuneParallel. It determines the number of blocks processed by each
+// goroutine and thus determines the minimum size of message that will be
+// parallel-processed.
 const blocksPerChunk = 200 // empirically determined on 3.5 GHz Mac M2 Max
 
 // End tuneable parameters
@@ -441,9 +445,9 @@ func (x *Ctx) UseParallel(b bool) {
 // processing generally, but allow shorter length messages to be processed
 // in parallel, thereby speeding up processing for them.
 //
-// If MaxGoroutines > 0 it determines how many goroutines may run
+// If MaxGoroutines > 0 it determines how many goroutines can run
 // simultaneously.
-// Larger values will speed up processing somewhat, also allowing more memory
+// Larger values will speed up processing, also allowing more memory
 // to be allocated at once. The default value, 300, results in simultaneous
 // allocation of 51,600 bytes.  Maximum simultaneous memory allocation is
 // MaxGoroutines * 172.  Go documentation recommends
@@ -547,7 +551,7 @@ func (x *Ctx) Encrypt(m, c []byte) (n int, err error) {
 							if r.input[12] == 0 {
 								r.input[13]++
 							}
-							for i := range blockLen {
+							for i := 0; i < blockLen; i++ {
 								c[ni] = m[ni] ^ r.output[i]
 								ni++
 							}
