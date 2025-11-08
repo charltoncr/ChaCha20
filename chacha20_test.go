@@ -1,8 +1,10 @@
 // chacha20_test.go - test ChaCha20 implementation.
 // By Ron Charlton, public domain, 2022-08-28.
-// $Id: chacha20_test.go,v 1.180 2025-08-04 07:03:37-04 ron Exp $
+// $Id: chacha20_test.go,v 1.182 2025-11-08 09:34:34-05 ron Exp $
 //
 // Requires randIn.dat and randOut.dat files to run to completion.
+//
+// DO NOT USE range. IT BREAKS OLDER GO VERSIONS.
 
 package chacha20
 
@@ -15,6 +17,7 @@ import (
 	"testing"
 )
 
+// Test interface compatability.
 var _ io.Reader = &Ctx{}
 var _ cipher.Stream = &Ctx{}
 
@@ -53,7 +56,7 @@ func TestChaCha20(t *testing.T) {
 
 	// 'if false {' is for normal testing.
 	// ONLY USE true IF YOU CAN RUN WITH A KNOWN-GOOD Encrypt METHOD, LIKE
-	// chacha20.go v4.48.
+	// chacha20.go v4.48, or with NewSmallMemory.
 	// 'if true {' generates two files: non-zero plaintext and its ciphertext
 	// and exits with t.Fatalf on purpose that says "files x and y were created".
 	if false {
@@ -67,7 +70,7 @@ func TestChaCha20(t *testing.T) {
 		err = os.WriteFile(randInFileName, gotRandIn, 0644)
 		if err == nil {
 			gotRandOut := make([]byte, len(gotRandIn))
-			ctx := New(key, iv)
+			ctx := NewSmallMemory(key, iv)
 			ctx.Encrypt(gotRandIn, gotRandOut)
 			err = os.WriteFile(randOutFileName, gotRandOut, 0644)
 		}
@@ -117,6 +120,7 @@ func TestChaCha20(t *testing.T) {
 		t.Errorf("Encrypt() NonZero: n=%d  err=%v", n, err)
 	}
 	if !bytes.Equal(gotNonZeroOut, nonZeroOut) {
+		// DO NOT USE range. IT BREAKS OLDER GO VERSIONS.
 		for i := 0; i < len(nonZeroIn); i++ {
 			if gotNonZeroOut[i] != nonZeroOut[i] {
 				t.Errorf("Encrypt() NonZero: got[%d]=%d, want[%d]=%d", i, gotNonZeroOut[i], i, nonZeroOut[i])

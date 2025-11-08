@@ -62,7 +62,9 @@
 // https://github.com/skeeto/chacha-go.  That implementation is vastly slower
 // than this implementation for long length plaintext/ciphertext/keystream/Read.
 //
-// $Id: chacha20.go,v 6.82 2025-08-04 07:03:37-04 ron Exp $
+// $Id: chacha20.go,v 6.86 2025-11-08 13:36:36-05 ron Exp $
+//
+// DO NOT USE range. IT BREAKS OLDER GO VERSIONS.
 ////
 
 // Package chacha20 provides public domain ChaCha20 encryption and decryption.
@@ -450,7 +452,7 @@ func (x *Ctx) UseParallel(b bool) {
 // Larger values will speed up processing, also allowing more memory
 // to be allocated at once. The default value, 300, results in simultaneous
 // allocation of 51,600 bytes.  Maximum simultaneous memory allocation is
-// MaxGoroutines * 172.  Go documentation recommends
+// MaxGoroutines * 172 bytes.  Go documentation recommends
 // liberty when issuing simultaneous goroutines, stating that 3,000
 // goroutines are easily managed by the Go runtime.
 //
@@ -526,6 +528,9 @@ func (x *Ctx) Encrypt(m, c []byte) (n int, err error) {
 			err = io.EOF
 			return
 		}
+		if n >= size {
+			return
+		}
 
 		// ==== Chunk-process with goroutines if possible. One chunk per goroutine.
 		// Messages longer than about 25,600 bytes will be chunk-processed unless
@@ -539,6 +544,7 @@ func (x *Ctx) Encrypt(m, c []byte) (n int, err error) {
 			if baseBlock+chunkCount*uint64(x.blocksPerChunk) > baseBlock {
 				// chunk processing won't reach keystream exhaustion (io.EOF)
 				wg := sync.WaitGroup{}
+				// DO NOT USE range.  IT BREAKS OLDER GO VERSIONS.
 				for chunk := uint64(0); chunk < chunkCount; chunk++ {
 					x.guard <- struct{}{} // blocks to limit simultaneous goroutines
 					wg.Add(1)
