@@ -13,7 +13,7 @@
 // Much later I parallelized the Encrypt method that all other relevant
 // methods depend on.  It resulted in 8X the speed for large input data
 // on a 12-processor M2 Max Mac Studio.  To limit the amount of allocated
-// memory, goroutines are throttled at 300 simultaneous instances.
+// memory, goroutines are throttled at 300 simultaneous instances by default.
 //
 // From the C file (chacha[-ref].c (at https://cr.yp.to/chacha.html):
 //		chacha-ref.c version 20080118
@@ -54,15 +54,15 @@
 //	 Read:
 //     Rounds   GB/s
 //     ------   ----
-//		 8      5.0
-//		12      4.3
+//		 8      5.7
+//		12      4.9
 //		20      3.6
 //
 // See an alternate implementation of chacha at
 // https://github.com/skeeto/chacha-go.  That implementation is vastly slower
 // than this implementation for long length plaintext/ciphertext/keystream/Read.
 //
-// $Id: chacha20.go,v 6.86 2025-11-08 13:36:36-05 ron Exp $
+// $Id: chacha20.go,v 6.89 2026-02-28 09:28:16-05 ron Exp $
 //
 // DO NOT USE range. IT BREAKS OLDER GO VERSIONS.
 ////
@@ -461,7 +461,7 @@ func (x *Ctx) UseParallel(b bool) {
 // With TuneParallel(50, 300) (allowing parallel processing of messages as
 // short as 6,400 bytes) ChaCha20 with parallel processing is 4.6 times as
 // fast (2.1 GB/s vs 457 MB/s) as non-parallel processing on a
-// 3.5 GHz Apple M2 with 12 processors.  YMMV.
+// 3.5 GHz Apple M2 Max with 12 processors.  YMMV.
 func (x *Ctx) TuneParallel(BlocksPerGoroutine, MaxGoroutines int) {
 	if BlocksPerGoroutine > 0 {
 		x.blocksPerChunk = BlocksPerGoroutine
@@ -632,8 +632,9 @@ func (x *Ctx) Keystream(stream []byte) {
 	if x.eof && len(stream) >= blockLen {
 		panic("chacha20.Keystream: key stream is exhausted")
 	}
-	t := make([]byte, len(stream)) // 3X faster than zeroing stream first
-	x.Encrypt(t, stream)
+	/// t := make([]byte, len(stream)) // 3X faster than zeroing stream first
+	clear(stream)
+	x.Encrypt(stream, stream)
 }
 
 // The idea for adding XORKeyStream and Read came from skeeto's public
@@ -665,6 +666,6 @@ func (x *Ctx) Read(b []byte) (int, error) {
 	if x.eof && len(b) >= blockLen {
 		panic("chacha20.Read: key stream is exhausted")
 	}
-	t := make([]byte, len(b)) // 3X faster than zeroing b first
-	return x.Encrypt(t, b)
+	clear(b)
+	return x.Encrypt(b, b)
 }

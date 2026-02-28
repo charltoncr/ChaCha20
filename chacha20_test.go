@@ -1,6 +1,6 @@
 // chacha20_test.go - test ChaCha20 implementation.
 // By Ron Charlton, public domain, 2022-08-28.
-// $Id: chacha20_test.go,v 1.182 2025-11-08 09:34:34-05 ron Exp $
+// $Id: chacha20_test.go,v 1.183 2026-02-28 08:45:44-05 ron Exp $
 //
 // Requires randIn.dat and randOut.dat files to run to completion.
 //
@@ -393,8 +393,17 @@ func BenchmarkChaCha_Read20rnds(b *testing.B) {
 	}
 }
 
+func BenchmarkChaCha_Keystream20(b *testing.B) {
+	m5e6 := make([]byte, 5e6)
+	b.SetBytes(int64(len(m5e6)))
+	ctx.SetRounds(20)
+	for b.Loop() {
+		ctx.Keystream(m5e6)
+	}
+}
+
 // This is the test used by skeeto's chacha-go implementation on GitHub.
-func BenchmarkOneBlockXORStream(b *testing.B) {
+func BenchmarkOneBlock_XORStream(b *testing.B) {
 	var key [32]byte
 	var iv [8]byte
 	var buf [blockLen]byte
