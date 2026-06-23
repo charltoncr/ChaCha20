@@ -11,7 +11,7 @@ chacha20.go and chacha20_test.go are in the
 [public domain](https://creativecommons.org/publicdomain/zero/1.0/)
 and may be used for any purpose.
 
-This version uses goroutines, yielding 8X the performance on
+This version uses goroutines, yielding 8X the speed on
 a 3.504 GHz 12-processor Mac Studio with M2 Max.
 
 ChaCha20 has been
