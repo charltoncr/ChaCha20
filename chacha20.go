@@ -11,7 +11,7 @@
 // and made the default number of rounds 20.
 //
 // Much later I parallelized the Encrypt method that all other relevant
-// methods depend on.  It resulted in 8X the speed for large input data
+// methods depend on.  It resulted in 8.7X the speed for large input data
 // on a 12-processor M2 Max Mac Studio.  To limit the amount of allocated
 // memory, goroutines are throttled at 300 simultaneous instances by default.
 //
@@ -63,7 +63,7 @@
 // https://github.com/skeeto/chacha-go.  That implementation is vastly slower
 // than this implementation for long length plaintext/ciphertext/keystream/Read.
 //
-// $Id: chacha20.go,v 6.91 2026-07-01 08:37:43-04 ron Exp $
+// $Id: chacha20.go,v 6.93 2026-07-01 12:35:51-04 ron Exp $
 //
 // DO NOT USE range. IT BREAKS OLDER GO VERSIONS.
 ////
@@ -94,7 +94,7 @@
 // call NewSmallMemory() instead of New for a much smaller memory footprint.
 // Processing speed then will be dramatically slower for long byte slices.
 // As an alternative, TuneParallel can also adjust memory allocation vs speed
-// for parallel processing, achieving four times the speed of non-parallel
+// for parallel processing, achieving 5.1 times the speed of non-parallel
 // processing with a minimal memory footprint.
 package chacha20
 
