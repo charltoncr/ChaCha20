@@ -39,30 +39,31 @@
 //		ctx.Encrypt(b, b)
 //		err = os.WriteFile("myfile.encrypted", b, 0644)
 //
-// chacha20.go v6.80 Encrypt on 3.504 GHz M2 Max Mac Studio w/12 processors,
-// 5 MB message, and 200 blocks-per-chunk parallel processing (go test -bench=.):
+// chacha20.go v6.89 Encrypt on 3.504 GHz M2 Max Mac Studio w/12 processors,
+// macOS Tahoe 26.5.1, Go 1.26.2, 5 MB message, and 200 blocks-per-chunk
+// parallel processing (go test -bench=.):
 //
 //	 Rounds	 GB/s  ns/block
 //	 ------	 ----  --------
-//	    8	 6.3      10      Default Tuning [=TuneParallel(200, 300)]
-//	   12	 5.2      12            "
-//	   20	 3.8      16            "
-//     20    0.46    140      NewSmallMemory
-//      8    6.5       9.6    TuneParallel(400, 3000) (~maximum speed)
-//     20    2.1      30      TuneParallel(50, 30)    (~minimun memory)
+//	    8	 6.5      10      Default Tuning [=TuneParallel(200, 300)]
+//	   12	 5.4      12            "
+//	   20	 4.0      16            "
+//     20    0.46    139      NewSmallMemory
+//      8    6.8       9.4    TuneParallel(400, 3000) (~maximum speed)
+//     20    2.4      27      TuneParallel(50, 30)    (~minimun memory)
 //
 //	 Read:
 //     Rounds   GB/s
 //     ------   ----
-//		 8      5.7
-//		12      4.9
-//		20      3.6
+//		 8      6.1
+//		12      5.0
+//		20      3.8
 //
 // See an alternate implementation of chacha at
 // https://github.com/skeeto/chacha-go.  That implementation is vastly slower
 // than this implementation for long length plaintext/ciphertext/keystream/Read.
 //
-// $Id: chacha20.go,v 6.89 2026-02-28 09:28:16-05 ron Exp $
+// $Id: chacha20.go,v 6.91 2026-07-01 08:37:43-04 ron Exp $
 //
 // DO NOT USE range. IT BREAKS OLDER GO VERSIONS.
 ////
@@ -459,9 +460,9 @@ func (x *Ctx) UseParallel(b bool) {
 // To change only one parameter in a call use zero for other parameter.
 //
 // With TuneParallel(50, 300) (allowing parallel processing of messages as
-// short as 6,400 bytes) ChaCha20 with parallel processing is 4.6 times as
-// fast (2.1 GB/s vs 457 MB/s) as non-parallel processing on a
-// 3.5 GHz Apple M2 Max with 12 processors.  YMMV.
+// short as 6,400 bytes) ChaCha20 with parallel processing is 5.2 times as
+// fast (2.4 GB/s vs 457 MB/s) as non-parallel processing on a
+// 3.504 GHz Apple M2 Max with 12 processors.  YMMV.
 func (x *Ctx) TuneParallel(BlocksPerGoroutine, MaxGoroutines int) {
 	if BlocksPerGoroutine > 0 {
 		x.blocksPerChunk = BlocksPerGoroutine

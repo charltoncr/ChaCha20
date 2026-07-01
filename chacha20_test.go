@@ -1,6 +1,6 @@
 // chacha20_test.go - test ChaCha20 implementation.
 // By Ron Charlton, public domain, 2022-08-28.
-// $Id: chacha20_test.go,v 1.183 2026-02-28 08:45:44-05 ron Exp $
+// $Id: chacha20_test.go,v 1.184 2026-07-01 08:43:51-04 ron Exp $
 //
 // Requires randIn.dat and randOut.dat files to run to completion.
 //
@@ -56,7 +56,7 @@ func TestChaCha20(t *testing.T) {
 
 	// 'if false {' is for normal testing.
 	// ONLY USE true IF YOU CAN RUN WITH A KNOWN-GOOD Encrypt METHOD, LIKE
-	// chacha20.go v4.48, or with NewSmallMemory.
+	// with NewSmallMemory.
 	// 'if true {' generates two files: non-zero plaintext and its ciphertext
 	// and exits with t.Fatalf on purpose that says "files x and y were created".
 	if false {
