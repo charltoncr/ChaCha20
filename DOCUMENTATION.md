@@ -32,7 +32,7 @@ Parallel processing can allocate up to 11,200 bytes of memory. If memory is
 tight call NewSmallMemory() instead of New for a much smaller memory footprint.
 Processing speed then will be dramatically slower for long byte slices.
 As an alternative, TuneParallel can also adjust memory allocation vs speed for
-parallel processing, achieving four times the speed of non-parallel processing
+parallel processing, achieving 5.1 times the speed of non-parallel processing
 with a minimal memory footprint.
 ```
 ## TYPES
@@ -175,20 +175,20 @@ are processed by each goroutine instance. Smaller values slow processing
 generally, but allow shorter length messages to be processed in parallel,
 thereby speeding up processing for them.
 
-If MaxGoroutines > 0 it determines how many goroutines may run
-simultaneously. Larger values will speed up processing somewhat,
-also allowing more memory to be allocated at once. The default value, 300,
-results in simultaneous allocation of 51,600 bytes. Maximum simultaneous
-memory allocation is MaxGoroutines * 172. Go documentation recommends
-liberty when issuing simultaneous goroutines, stating that 3,000 goroutines
-are easily managed by the Go runtime.
+If MaxGoroutines > 0 it determines how many goroutines can run
+simultaneously. Larger values will speed up processing, also allowing
+more memory to be allocated at once. The default value, 300, results
+in simultaneous allocation of 51,600 bytes. Maximum simultaneous memory
+allocation is MaxGoroutines * 172 bytes. Go documentation recommends liberty
+when issuing simultaneous goroutines, stating that 3,000 goroutines are
+easily managed by the Go runtime.
 
 To change only one parameter in a call use zero for other parameter.
 
-With TuneParallel(50, 30) (allowing parallel processing of messages as short
-as 6,400 bytes) ChaCha20 with parallel processing is 4.6 times as fast (2.1
-GB/s vs 457 MB/s) as non-parallel processing on a 3.5 GHz Apple M2 with 12
-processors. YMMV.
+With TuneParallel(50, 300) (allowing parallel processing of messages as
+short as 6,400 bytes) ChaCha20 with parallel processing is 5.2 times as fast
+(2.4 GB/s vs 457 MB/s) as non-parallel processing on a 3.504 GHz Apple M2
+Max with 12 processors. YMMV.
 
 ## func 
 ```go
@@ -208,5 +208,3 @@ XORKeyStream implements the crypto/cipher.Stream interface. XORKeyStream
 XORs src bytes with ChaCha's key stream and puts the result in dst.
 XORKeyStream panics if len(dst) is less than len(src), or when the ChaCha
 key stream is exhausted after producing 1.2 zettabytes.
-
-
