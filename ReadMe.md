@@ -1,5 +1,5 @@
 <!-- title: ChaCha20 Read Me -->
-<!-- $Id: ReadMe.md,v 1.28 2026-06-23 13:10:02-04 ron Exp $ -->
+<!-- $Id: ReadMe.md,v 1.30 2026-07-01 08:54:46-04 ron Exp $ -->
 
 # ChaCha20 public domain encryption and decryption in Go
 
@@ -11,8 +11,8 @@ chacha20.go and chacha20_test.go are in the
 [public domain](https://creativecommons.org/publicdomain/zero/1.0/)
 and may be used for any purpose.
 
-This version uses goroutines, yielding 8X the speed on
-a 3.504 GHz 12-processor Mac Studio with M2 Max.
+This version uses goroutines, yielding 8.7X the speed on
+a 3.504 GHz 12-processor Mac Studio with M2 Max w/12 processors.
 
 ChaCha20 has been
 [widely adopted](https://en.wikipedia.org/wiki/Salsa20#ChaCha20_adoption).
@@ -23,17 +23,17 @@ Example use:
 import "github.com/charltoncr/chacha20"
 import "crypto/rand"
 // ...
-var m = []byte("This is a test.")    // put a real message in m here
+var m = []byte("This is a test.") // use a real message here
 c := make([]byte, len(m))
-key := make([]byte, 32)    // 16 is acceptable; 32 is recommended
-rand.Read(key)          // use your real key here
+key := make([]byte, 32) // 16 is acceptable; 32 is recommended
+rand.Read(key)          // use a real key here
 iv := make([]byte, 8)   // must be 8  
-rand.Read(iv)           // use your real initialization vector here
+rand.Read(iv)           // use a real initialization vector here
 ctx := chacha20.New(key, iv) // create a chacha20 context
 ctx.Encrypt(m, c)       // encrypt m into c
 // ...
-ctx = chacha20.New(key, iv)   // must use same key/iv as encrypt to decrypt
-ctx.Decrypt(c, m)       // decrypt c back into m
+ctx = chacha20.New(key, iv) // must use same key/iv as encrypt to decrypt
+ctx.Decrypt(c, m) // decrypt c back into m
 // ...
 ```
 
